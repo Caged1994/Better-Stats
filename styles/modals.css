@@ -7930,7 +7930,7 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 
 #character-workshop-popup .cw-stat-row {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto auto 28px;
+    grid-template-columns: 34px minmax(0, 1fr) auto auto auto 28px;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
@@ -7954,12 +7954,53 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 }
 
 #character-workshop-popup .cw-stat-swatch {
+    position: relative;
     justify-self: center;
-    width: 14px;
-    height: 14px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+    transition: box-shadow 0.15s;
 }
+
+#character-workshop-popup .cw-stat-swatch:hover,
+#character-workshop-popup .cw-stat-swatch:focus-within { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); }
+
+/* The native picker stays clickable but invisible over the swatch. */
+#character-workshop-popup .cw-stat-color {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+#character-workshop-popup .cw-stat-on { justify-self: center; }
+
+#character-workshop-popup .cw-stat-on-spacer { width: 40px; }
+
+#character-workshop-popup .cw-stat-row.is-off .cw-stat-name,
+#character-workshop-popup .cw-stat-row.is-off .cw-stat-base,
+#character-workshop-popup .cw-stat-row.is-off .cw-stat-ai-toggle,
+#character-workshop-popup .cw-stat-row.is-off .cw-stat-abbr,
+#character-workshop-popup .cw-stat-row.is-off .cw-stat-swatch { opacity: 0.4; }
+
+#character-workshop-popup .cw-stat-off-tag {
+    margin-left: 6px;
+    padding: 0 5px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+#character-workshop-popup .cw-stats-legend { margin-top: -0.4rem; }
 
 #character-workshop-popup .cw-stat-name {
     display: flex;
@@ -8046,7 +8087,7 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 
 @media (max-width: 600px) {
     #character-workshop-popup .cw-stat-row {
-        grid-template-columns: 28px minmax(0, 1fr) auto auto 24px;
+        grid-template-columns: 26px minmax(0, 1fr) auto auto auto 24px;
         gap: 6px;
         padding: 6px 8px;
     }
@@ -8103,3 +8144,42 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 }
 
 #character-workshop-popup .cw-stats-off { font-style: italic; }
+
+.rpg-stat-color-swatch {
+    position: relative;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
+    border-radius: 50%;
+    vertical-align: -1px;
+    cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.rpg-stat-color-swatch:hover { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); }
+
+.rpg-stat-color-swatch .rpg-stat-color {
+    position: absolute;
+    inset: -3px;
+    width: calc(100% + 6px);
+    height: calc(100% + 6px);
+    opacity: 0;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+.rpg-stat-color-reset {
+    margin-left: 6px;
+    padding: 0 4px;
+    font-size: 0.75em;
+    color: rgba(234, 234, 234, 0.55);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.rpg-stat-color-reset:hover { color: #fff; }
+
+.rpg-stat-setting-row.is-off .rpg-setting-label-group { opacity: 0.45; }

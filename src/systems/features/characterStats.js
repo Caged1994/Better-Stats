@@ -36,6 +36,7 @@ import {
     changesToRevert,
     buildStatsPrompt,
     activeStats,
+    isHexColor,
 } from '../../utils/statsModel.js';
 
 export const STATS_CHANGED_EVENT = 'dooms:stats-changed';
@@ -122,6 +123,22 @@ export function setStatEnabled(statId, enabled) {
     notifyStatsChanged({ source: 'settings' });
 }
 
+/** Colours chosen for built-in stats: { statId: '#hex' }. */
+export function getStatColors() {
+    const map = extensionSettings.characterStatColors;
+    return map && typeof map === 'object' ? map : {};
+}
+
+/** Sets (or, with an empty value, resets) the colour of a built-in stat for every character. */
+export function setStatColor(statId, color) {
+    const map = { ...getStatColors() };
+    if (isHexColor(color)) map[statId] = color.toLowerCase();
+    else delete map[statId];
+    extensionSettings.characterStatColors = map;
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+}
+
 /**
  * The character's full, resolved stat list (defaults when nothing saved).
  * Switched-off stats are included with enabled: false so their stored
@@ -130,7 +147,7 @@ export function setStatEnabled(statId, enabled) {
 export function getStatSheet(name, isUser = false) {
     const store = sheetStore(isUser);
     const key = findKey(store, name);
-    return resolveSheet(key !== undefined ? store[key] : null, { disabled: getDisabledStatIds() });
+    return resolveSheet(key !== undefined ? store[key] : null, { disabled: getDisabledStatIds(), colors: getStatColors() });
 }
 
 /** Whether anything was ever saved for this character. */

@@ -64,6 +64,11 @@ export const LOW_STATE_COLOR = '#e5484d';
 
 export const MAX_CUSTOM_STATS = 24;
 
+/** #rgb / #rrggbb only — anything else is ignored. */
+export function isHexColor(v) {
+    return typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v);
+}
+
 function isFiniteNumber(v) {
     return typeof v === 'number' && Number.isFinite(v);
 }
@@ -99,8 +104,9 @@ export function slugify(text) {
  * @param {object|null|undefined} stored
  * @returns {Array<object>}
  */
-export function resolveSheet(stored, { disabled = [] } = {}) {
+export function resolveSheet(stored, { disabled = [], colors = {} } = {}) {
     const off = new Set(Array.isArray(disabled) ? disabled : []);
+    const palette = colors && typeof colors === 'object' ? colors : {};
     const base = stored && typeof stored.base === 'object' && stored.base ? stored.base : {};
     const ai = stored && typeof stored.ai === 'object' && stored.ai ? stored.ai : {};
     const custom = stored && Array.isArray(stored.custom) ? stored.custom : [];
@@ -116,7 +122,8 @@ export function resolveSheet(stored, { disabled = [] } = {}) {
             min: k.min,
             max: k.max,
             builtin,
-            color: def.color || '',
+            // Built-in colours can be changed globally (Settings / Workshop).
+            color: (builtin && isHexColor(palette[def.id]) ? palette[def.id] : def.color) || '',
         };
         const fallbackBase = isFiniteNumber(def.base) ? def.base : k.defaultBase;
         stat.base = clampStatValue(stat, isFiniteNumber(base[def.id]) ? base[def.id] : fallbackBase);

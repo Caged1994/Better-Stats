@@ -75,8 +75,8 @@ import { escapeHtml } from '../../utils/html.js';
 import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
 // Character Stats: the sheet (definitions, base values, AI flags) is shared by
 // every campaign, so it travels across version switches like colour/aliases.
-import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending } from '../features/characterStats.js';
-import { createCustomStat, clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
+import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending, setStatEnabled, setStatColor, getDisabledStatIds, getStatColors, STATS_CHANGED_EVENT } from '../features/characterStats.js';
+import { createCustomStat, clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK, BUILTIN_STATES, isHexColor } from '../../utils/statsModel.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -554,36 +554,61 @@ function cloneStats(stats) {
 
 function statRowHtml(stat) {
     const isState = stat.kind === 'state';
+    const off = stat.enabled === false;
     const range = isState ? '0–100%' : '1–100';
+    // Stats (rings) get a colour picker: global for the built-ins, this
+    // character's own for custom stats. Attributes show their abbreviation.
+    const colorTip = stat.builtin
+        ? `Colour of ${stat.name} for every character`
+        : `Colour of ${stat.name}`;
     const swatch = isState
-        ? `<span class="cw-stat-swatch" style="background:${escapeHtml(stat.color || '#888')}"></span>`
+        ? `<label class="cw-stat-swatch" title="${escapeHtml(colorTip)}" style="background:${escapeHtml(stat.color || '#888888')}">
+                <input type="color" class="cw-stat-color" value="${escapeHtml(toSixDigitHex(stat.color))}" aria-label="${escapeHtml(colorTip)}">
+           </label>`
         : `<span class="cw-stat-abbr">${escapeHtml(stat.abbr || stat.name.slice(0, 3).toUpperCase())}</span>`;
     const tip = stat.description ? ` title="${escapeHtml(stat.description)}"` : '';
+    const disabledAttr = off ? ' disabled' : '';
+    const onSwitch = stat.builtin
+        ? `<label class="rpg-toggle-switch cw-stat-on" title="${off ? 'Switched off' : 'Switched on'} for every character — click to change">
+                <input type="checkbox" class="cw-stat-on-input"${off ? '' : ' checked'} aria-label="Use ${escapeHtml(stat.name)}">
+                <span class="rpg-toggle-slider"></span>
+           </label>`
+        : '<span class="cw-stat-on-spacer" title="Custom stats are always on — delete them to remove"></span>';
     return `
-        <div class="cw-stat-row${stat.builtin ? '' : ' is-custom'}" data-stat="${escapeHtml(stat.id)}">
+        <div class="cw-stat-row${stat.builtin ? '' : ' is-custom'}${off ? ' is-off' : ''}" data-stat="${escapeHtml(stat.id)}">
             ${swatch}
             <div class="cw-stat-name"${tip}>
-                <span class="cw-stat-label">${escapeHtml(stat.name)}</span>
+                <span class="cw-stat-label">${escapeHtml(stat.name)}${off ? ' <span class="cw-stat-off-tag">off</span>' : ''}</span>
                 ${stat.builtin ? '' : `<span class="cw-stat-desc">${escapeHtml(stat.description || 'No description')}</span>`}
             </div>
             <label class="cw-stat-base" title="Starting value (${range})">
                 <input type="number" class="rpg-input cw-stat-base-input" min="${stat.min}" max="${stat.max}" step="1"
-                    value="${escapeHtml(String(stat.base))}" aria-label="${escapeHtml(stat.name)} starting value"><span class="cw-stat-unit">${isState ? '%' : ''}</span>
+                    value="${escapeHtml(String(stat.base))}" aria-label="${escapeHtml(stat.name)} starting value"${disabledAttr}><span class="cw-stat-unit">${isState ? '%' : ''}</span>
             </label>
             <label class="cw-stat-ai-toggle" title="Let the AI change ${escapeHtml(stat.name)}">
-                <input type="checkbox" class="cw-stat-ai-input"${stat.ai ? ' checked' : ''}> AI
+                <input type="checkbox" class="cw-stat-ai-input"${stat.ai ? ' checked' : ''}${disabledAttr}> AI
             </label>
+            ${onSwitch}
             ${stat.builtin ? '<span class="cw-stat-del-spacer"></span>' : `<button type="button" class="rpg-dc-knife-btn cw-stat-delete" title="Remove ${escapeHtml(stat.name)}"><i class="fa-solid fa-trash"></i></button>`}
         </div>`;
+}
+
+/** <input type=color> only takes #rrggbb. */
+function toSixDigitHex(color) {
+    const c = String(color || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+    if (/^#[0-9a-f]{3}$/i.test(c)) return '#' + c.slice(1).split('').map(ch => ch + ch).join('').toLowerCase();
+    return '#888888';
 }
 
 function renderStats() {
     const $host = $modal.find('#cw-stats-editor');
     if (!$host.length) return;
-    // Stats switched off in Settings stay on the draft (their values are kept)
-    // but are not shown.
-    const stats = (draft?.stats || []).filter(s => s.enabled !== false);
-    const offNames = (draft?.stats || []).filter(s => s.enabled === false).map(s => s.name);
+    // On/off and built-in colours are global settings that may have changed
+    // since the draft was built (Settings, another character): read them fresh.
+    syncGlobalStatSettings();
+    // Switched-off stats are listed greyed out so they can be switched back on.
+    const stats = draft?.stats || [];
     const attrs = stats.filter(s => s.kind === 'attribute');
     const states = stats.filter(s => s.kind === 'state');
     // NPCs get their values from the AI the first time they are in a scene;
@@ -607,15 +632,36 @@ function renderStats() {
             <div class="cw-stats-group-head"><span>Stats</span><span class="muted">0–100% · rings in the Stats panel</span></div>
             ${states.map(statRowHtml).join('')}
         </div>` : ''}
-        ${offNames.length ? `<p class="helper cw-stats-off">Switched off in Settings → Stats: ${escapeHtml(offNames.join(', '))}.</p>` : ''}`);
+        <p class="helper cw-stats-legend"><strong>On</strong> and the colour of the built-in stats apply to every character.</p>`);
+}
+
+function onGlobalStatsChanged(e) {
+    if (e?.detail?.source !== 'settings') return;
+    if (!$modal || !$modal.hasClass('is-open') || !draft) return;
+    const active = document.activeElement;
+    if (active && $modal[0].contains(active) && active.matches('input[type=number], input[type=color]')) return;
+    renderStats();
+}
+
+/** Copies the global on/off state and built-in colours onto the draft. */
+function syncGlobalStatSettings() {
+    if (!draft || !Array.isArray(draft.stats)) return;
+    const off = new Set(getDisabledStatIds());
+    const colors = getStatColors();
+    const defaults = new Map(BUILTIN_STATES.map(d => [d.id, d.color]));
+    for (const st of draft.stats) {
+        if (!st.builtin) continue;
+        st.enabled = !off.has(st.id);
+        if (st.kind === 'state') st.color = isHexColor(colors[st.id]) ? colors[st.id] : (defaults.get(st.id) || st.color);
+    }
 }
 
 /** Clears the "Add a stat" form; the AI box follows the kind's default. */
 function resetStatAddForm() {
     $modal.find('#cw-stat-new-name').val('');
     $modal.find('#cw-stat-new-desc').val('');
-    $modal.find('#cw-stat-new-kind').val('attribute');
-    $modal.find('#cw-stat-new-ai').prop('checked', false);
+    $modal.find('#cw-stat-new-kind').val('state');
+    $modal.find('#cw-stat-new-ai').prop('checked', true);
     $modal.find('#cw-stat-new-error').text('');
 }
 
@@ -1922,6 +1968,32 @@ function bindStaticListeners() {
         // Choosing a value by hand means the user is setting the sheet.
         if (draft.statsPending) { draft.statsPending = false; renderStats(); }
     });
+    // On/off and built-in colours are global settings: applied at once,
+    // mirrored onto the draft so the tab repaints without losing edits.
+    $modal.on('change.cw', '#cw-stats-editor .cw-stat-on-input', function () {
+        const stat = findDraftStat(this);
+        if (!stat || !stat.builtin) return;
+        const on = $(this).is(':checked');
+        setStatEnabled(stat.id, on);
+        stat.enabled = on;
+        renderStats();
+    });
+    $modal.on('input.cw', '#cw-stats-editor .cw-stat-color', function () {
+        // Live preview on the swatch while the picker is open.
+        $(this).closest('.cw-stat-swatch').css('background', $(this).val());
+    });
+    $modal.on('change.cw', '#cw-stats-editor .cw-stat-color', function () {
+        const stat = findDraftStat(this);
+        if (!stat) return;
+        const color = String($(this).val() || '').toLowerCase();
+        stat.color = color;
+        if (stat.builtin) setStatColor(stat.id, color);
+        else draft.dirty.stats = true;
+        renderStats();
+    });
+    // Settings → Stats changed while the card is open: repaint the tab.
+    window.removeEventListener(STATS_CHANGED_EVENT, onGlobalStatsChanged);
+    window.addEventListener(STATS_CHANGED_EVENT, onGlobalStatsChanged);
     $modal.on('click.cw', '#cw-stats-regenerate', function () {
         if (!draft || draft.isUser) return;
         draft.statsPending = true;

@@ -170,6 +170,12 @@ S.setStatEnabled('mana', true);
 check('switching it back on keeps its values', S.getCurrentStatValues('Mastera', true).mana === 33 && S.getStatSheet('Mastera', true).find(s => s.id === 'mana').enabled);
 check('the setting is global (other characters too)', (S.setStatEnabled('str', false), S.getStatSheet('Elena').find(s => s.id === 'str').enabled === false));
 S.setStatEnabled('str', true);
+S.setStatColor('health', '#00FF88');
+check('a built-in stat colour applies to every character', S.getStatSheet('Elena').find(s => s.id === 'health').color === '#00ff88' && S.getStatSheet('Mastera', true).find(s => s.id === 'health').color === '#00ff88');
+S.setStatColor('health', '');
+check('...and can be reset to the default', S.getStatSheet('Elena').find(s => s.id === 'health').color === '#e5484d');
+S.setStatColor('health', 'red; background:url(x)');
+check('...ignoring anything that is not a hex colour', S.getStatSheet('Elena').find(s => s.id === 'health').color === '#e5484d');
 
 // ── 7. Deleting a custom stat / character cleans up ──
 const trimmed = S.getStatSheet('Mastera', true).filter(s => s.id !== sanity.id);
