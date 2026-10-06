@@ -35,6 +35,7 @@ import {
     mergeChangeSets,
     changesToRevert,
     buildStatsPrompt,
+    activeStats,
 } from '../../utils/statsModel.js';
 
 export const STATS_CHANGED_EVENT = 'dooms:stats-changed';
@@ -103,11 +104,33 @@ export function notifyStatsChanged(detail = {}) {
 
 // ─── Sheets ─────────────────────────────────────────────────────────────────
 
-/** The character's full, resolved stat list (defaults when nothing saved). */
+// ─── Global on/off per built-in stat ────────────────────────────────────────
+
+/** Ids of the built-in stats the user switched off (Settings → Stats). */
+export function getDisabledStatIds() {
+    const list = extensionSettings.characterStatsDisabled;
+    return Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
+}
+
+/** Switches one built-in stat on or off for every character. */
+export function setStatEnabled(statId, enabled) {
+    const off = new Set(getDisabledStatIds());
+    if (enabled) off.delete(statId);
+    else off.add(statId);
+    extensionSettings.characterStatsDisabled = [...off];
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+}
+
+/**
+ * The character's full, resolved stat list (defaults when nothing saved).
+ * Switched-off stats are included with enabled: false so their stored
+ * values survive; use activeStats() for what should be shown or sent.
+ */
 export function getStatSheet(name, isUser = false) {
     const store = sheetStore(isUser);
     const key = findKey(store, name);
-    return resolveSheet(key !== undefined ? store[key] : null);
+    return resolveSheet(key !== undefined ? store[key] : null, { disabled: getDisabledStatIds() });
 }
 
 /** Whether anything was ever saved for this character. */
@@ -359,13 +382,14 @@ export function buildStatsPromptForGeneration({ compact = true, standalone = fal
 export function buildStatsContextSummary() {
     if (!isCharacterStatsEnabled()) return '';
     const lines = getStatCharacters().filter(c => !isStatGenerationPending(c.name, c.isUser)).map(({ name, isUser }) => {
-        const stats = getStatSheet(name, isUser);
+        const stats = activeStats(getStatSheet(name, isUser));
         const cur = getCurrentStatValues(name, isUser, stats);
         const states = stats.filter(s => s.kind === 'state').map(s => `${s.name} ${cur[s.id]}%`);
         const attrs = stats.filter(s => s.kind === 'attribute').map(s => `${s.abbr || s.name} ${cur[s.id]}`);
         return `${name}${isUser ? ' (player character)' : ''}: ${[...states, ...attrs].join(', ')}`;
     });
-    return lines.length ? 'Character stats:\n' + lines.join('\n') : '';
+    const kept = lines.filter(l => !l.endsWith(': '));
+    return kept.length ? 'Character stats:\n' + kept.join('\n') : '';
 }
 
 // ─── Applying the AI's update ───────────────────────────────────────────────
@@ -455,7 +479,7 @@ function applyGeneratedSheets(targets, generated) {
     }
     for (const [key, list] of byKey) {
         const target = targets.find(t => t.key === key);
-        if (!target || list.length < Math.ceil(target.stats.length / 2)) continue;
+        if (!target || list.length < Math.ceil(activeStats(target.stats).length / 2)) continue;
         const stats = target.stats.map(s => ({ ...s }));
         for (const c of list) {
             const stat = stats.find(s => s.id === c.statId);

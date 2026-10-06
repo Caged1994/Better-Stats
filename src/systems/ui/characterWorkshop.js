@@ -580,7 +580,10 @@ function statRowHtml(stat) {
 function renderStats() {
     const $host = $modal.find('#cw-stats-editor');
     if (!$host.length) return;
-    const stats = draft?.stats || [];
+    // Stats switched off in Settings stay on the draft (their values are kept)
+    // but are not shown.
+    const stats = (draft?.stats || []).filter(s => s.enabled !== false);
+    const offNames = (draft?.stats || []).filter(s => s.enabled === false).map(s => s.name);
     const attrs = stats.filter(s => s.kind === 'attribute');
     const states = stats.filter(s => s.kind === 'state');
     // NPCs get their values from the AI the first time they are in a scene;
@@ -596,14 +599,15 @@ function renderStats() {
             </div>`);
     $host.html(`
         ${genBox}
-        <div class="cw-stats-group">
+        ${attrs.length ? `<div class="cw-stats-group">
             <div class="cw-stats-group-head"><span>Attributes</span><span class="muted">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak · up to 100</span></div>
             ${attrs.map(statRowHtml).join('')}
-        </div>
-        <div class="cw-stats-group">
-            <div class="cw-stats-group-head"><span>States</span><span class="muted">0–100% · rings in the Stats panel</span></div>
+        </div>` : ''}
+        ${states.length ? `<div class="cw-stats-group">
+            <div class="cw-stats-group-head"><span>Stats</span><span class="muted">0–100% · rings in the Stats panel</span></div>
             ${states.map(statRowHtml).join('')}
-        </div>`);
+        </div>` : ''}
+        ${offNames.length ? `<p class="helper cw-stats-off">Switched off in Settings → Stats: ${escapeHtml(offNames.join(', '))}.</p>` : ''}`);
 }
 
 /** Clears the "Add a stat" form; the AI box follows the kind's default. */

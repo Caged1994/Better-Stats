@@ -8078,3 +8078,28 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 }
 
 #character-workshop-popup .cw-stats-gen.is-pending i { color: var(--cw-accent, var(--rpg-highlight, #e94560)); }
+
+/* Settings → Stats switches */
+.rpg-stat-toggle-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 7px;
+    border-radius: 50%;
+    vertical-align: 0;
+}
+
+.rpg-stat-toggle-abbr {
+    display: inline-block;
+    min-width: 2.6em;
+    margin-right: 7px;
+    padding: 1px 4px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-align: center;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#character-workshop-popup .cw-stats-off { font-style: italic; }

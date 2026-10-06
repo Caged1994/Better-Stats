@@ -16,7 +16,7 @@ import { saveSettings } from '../../core/persistence.js';
 import { ensureCss } from '../../core/cssLoader.js';
 import { extensionFolderPath } from '../../core/config.js';
 import { escapeHtml } from '../../utils/html.js';
-import { ringColor, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
+import { ringColor, activeStats, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
 import {
     STATS_CHANGED_EVENT,
     getStatSheet,
@@ -206,7 +206,8 @@ function buildHtml({ popout }) {
             }).join('')}
         </nav>` : '';
 
-    const stats = getStatSheet(selected.name, selected.isUser);
+    // Stats switched off in Settings are not shown.
+    const stats = activeStats(getStatSheet(selected.name, selected.isUser));
     const cur = getCurrentStatValues(selected.name, selected.isUser, stats);
     const states = stats.filter(s => s.kind === 'state');
     const attrs = stats.filter(s => s.kind === 'attribute');
@@ -228,14 +229,15 @@ function buildHtml({ popout }) {
             ${isStatGenerationPending(selected.name, selected.isUser) ? `
             <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
-            <section class="dsp-section">
-                <h3 class="dsp-section-title">States</h3>
+            ${states.length ? `<section class="dsp-section">
+                <h3 class="dsp-section-title">Stats</h3>
                 <div class="dsp-rings">${states.map(s => ringHtml(s, cur[s.id])).join('')}</div>
-            </section>
-            <section class="dsp-section">
+            </section>` : ''}
+            ${attrs.length ? `<section class="dsp-section">
                 <h3 class="dsp-section-title">Attributes <span class="dsp-scale">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak</span></h3>
                 <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id])).join('')}</div>
-            </section>
+            </section>` : ''}
+            ${!states.length && !attrs.length ? '<div class="dsp-empty">Every stat is switched off in Settings → Stats.</div>' : ''}
             <p class="dsp-foot">Click a value to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do. Stats, starting values and AI permissions are set in the Workshop.</p>
         </div>`;
 }

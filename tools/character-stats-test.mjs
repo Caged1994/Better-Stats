@@ -157,6 +157,20 @@ check('swipe rolls back the AI\'s changes', S.getCurrentStatValues('Elena').sati
 check('...but keeps a value the user edited since', S.getCurrentStatValues('Mastera', true).health === 75 && reverted === 1);
 check('undo is consumed once', S.revertAIStatsForReplacedMessage(3) === 0);
 
+// ── 6b. Switching a stat off for everyone ──
+S.setCurrentStatValue('Mastera', true, 'mana', 33);
+S.setStatEnabled('mana', false);
+check('a switched-off stat is resolved as disabled', S.getStatSheet('Mastera', true).find(s => s.id === 'mana').enabled === false);
+check('...and is not sent to the AI', !pb.generateTrackerInstructions(false, false).includes('"Mana"'));
+check('...nor listed in the separate-mode context', !/Mana/.test(pb.generateContextualSummary()));
+S.applyAIStatUpdates({ Mastera: { Mana: 90 } }, chat.length - 1);
+check('...and the AI cannot change it', S.getCurrentStatValues('Mastera', true).mana === 33);
+S.saveStatSheet('Mastera', true, S.getStatSheet('Mastera', true));
+S.setStatEnabled('mana', true);
+check('switching it back on keeps its values', S.getCurrentStatValues('Mastera', true).mana === 33 && S.getStatSheet('Mastera', true).find(s => s.id === 'mana').enabled);
+check('the setting is global (other characters too)', (S.setStatEnabled('str', false), S.getStatSheet('Elena').find(s => s.id === 'str').enabled === false));
+S.setStatEnabled('str', true);
+
 // ── 7. Deleting a custom stat / character cleans up ──
 const trimmed = S.getStatSheet('Mastera', true).filter(s => s.id !== sanity.id);
 S.setCurrentStatValue('Mastera', true, sanity.id, 33);

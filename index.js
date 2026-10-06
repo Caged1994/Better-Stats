@@ -152,6 +152,7 @@ import { initMobileCompose, closeMobileCompose } from './src/systems/ui/mobileCo
 import { waitForAliasDecisions } from './src/systems/features/characterAliases.js';
 import { initMobileQuickJump, refreshMobileQuickJump } from './src/systems/ui/mobileQuickJump.js';
 import { escapeHtml } from './src/utils/html.js';
+import { initStatsSettings } from './src/systems/ui/statsSettings.js';
 // Context Inspector — see what DES is injecting into the prompt
 import { initInspector } from './src/systems/generation/inspector.js';
 // ============ DEBUG: Module loaded successfully ============
@@ -1990,6 +1991,8 @@ function bindSettingsUI() {
         }
     });
     // ── Initialize UI state ──
+    // Character Stats: one switch per built-in stat
+    try { initStatsSettings(); } catch (e) { console.warn('[Dooms Tracker] Stats settings failed to initialise', e); }
     // Generation
     $('#rpg-generation-mode').val(extensionSettings.generationMode || 'together');
     $('#rpg-toggle-auto-update').prop('checked', extensionSettings.autoUpdate);

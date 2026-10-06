@@ -22,6 +22,10 @@
  *     pending?: true }   // NPC waiting for the AI to generate its values
  * Missing entries fall back to the defaults below, so new built-ins added in
  * a later release show up on existing sheets automatically.
+ *
+ * Built-in stats can be switched off globally (Settings → Stats). A switched
+ * off stat keeps its stored values but is resolved with enabled: false, and
+ * every consumer (panel, Workshop, prompt, AI updates) skips it.
  */
 
 export const STAT_KINDS = {
@@ -95,7 +99,8 @@ export function slugify(text) {
  * @param {object|null|undefined} stored
  * @returns {Array<object>}
  */
-export function resolveSheet(stored) {
+export function resolveSheet(stored, { disabled = [] } = {}) {
+    const off = new Set(Array.isArray(disabled) ? disabled : []);
     const base = stored && typeof stored.base === 'object' && stored.base ? stored.base : {};
     const ai = stored && typeof stored.ai === 'object' && stored.ai ? stored.ai : {};
     const custom = stored && Array.isArray(stored.custom) ? stored.custom : [];
@@ -116,6 +121,7 @@ export function resolveSheet(stored) {
         const fallbackBase = isFiniteNumber(def.base) ? def.base : k.defaultBase;
         stat.base = clampStatValue(stat, isFiniteNumber(base[def.id]) ? base[def.id] : fallbackBase);
         stat.ai = typeof ai[def.id] === 'boolean' ? ai[def.id] : k.defaultAi;
+        stat.enabled = !(builtin && off.has(def.id));
         return stat;
     };
 
@@ -209,6 +215,19 @@ export function createCustomStat(existing, input) {
     return { stat };
 }
 
+/** The stats that are switched on. */
+export function activeStats(stats) {
+    return (stats || []).filter(s => s && s.enabled !== false);
+}
+
+/** Every built-in stat, in display order (for the Settings list). */
+export function builtinStatList() {
+    return [
+        ...BUILTIN_ATTRIBUTES.map(d => ({ ...d, kind: 'attribute' })),
+        ...BUILTIN_STATES.map(d => ({ ...d, kind: 'state' })),
+    ];
+}
+
 /** Finds a stat by id, name or abbreviation (case-insensitive). */
 export function findStat(stats, label) {
     const key = String(label || '').trim().toLowerCase();
@@ -286,8 +305,9 @@ export function computeAIChanges(targets, raw) {
         if (!target) continue;
         for (const [label, rawValue] of Object.entries(entry.values)) {
             const stat = findStat(target.stats, label);
-            // A character being generated takes every stat, locked or not.
-            if (!stat || (!stat.ai && !target.generate)) continue;
+            // A character being generated takes every stat, locked or not;
+            // switched-off stats are never touched.
+            if (!stat || stat.enabled === false || (!stat.ai && !target.generate)) continue;
             const dedupe = `${target.key}\u0000${stat.id}`;
             if (done.has(dedupe)) continue;
             const value = clampStatValue(stat, typeof rawValue === 'object' && rawValue ? rawValue.value : rawValue);
@@ -347,7 +367,10 @@ export function attributeScaleLine(compact = true) {
  * @returns {string} '' when there is nothing to send
  */
 export function buildStatsPrompt(entries, { compact = true, standalone = false } = {}) {
-    const list = (entries || []).filter(e => e && e.displayName && Array.isArray(e.stats) && e.stats.length);
+    const list = (entries || [])
+        .filter(e => e && e.displayName && Array.isArray(e.stats))
+        .map(e => ({ ...e, stats: activeStats(e.stats) }))
+        .filter(e => e.stats.length);
     if (!list.length) return '';
 
     const payload = {};
