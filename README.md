@@ -1,8 +1,10 @@
-# Doom's Enhancement Suite for SillyTavern
+# Better Stats for SillyTavern
 
 A comprehensive enhancement extension for SillyTavern that adds character tracking, scene management, plot twist generation, chat bubbles, character sheets, and deep customization to your roleplay experience.
 
-This extension was entirely vibe-coded using Claude Code. It started as a fork of SpicyMarinara's RPG Companion and has since been heavily modified and expanded. Their extension is fantastic — check it out if you haven't.
+Better Stats is a fork of [Doom's Enhancement Suite](https://github.com/DangerDaza/Dooms-Enhancement-Suite) by DangerDaza, renamed and extended with Character Stats (see below). Everything else described here comes from the original extension.
+
+Doom's Enhancement Suite was entirely vibe-coded using Claude Code. It started as a fork of SpicyMarinara's RPG Companion and has since been heavily modified and expanded. Their extension is fantastic — check it out if you haven't.
 
 This is a work in progress. Constructive criticism and contributions are welcome.
 
@@ -13,11 +15,11 @@ This is a work in progress. Constructive criticism and contributions are welcome
 3. Click **Install Extension**
 4. Paste this URL:
    ```
-   https://github.com/DangerDaza/Dooms-Enhancement-Suite
+   https://github.com/Caged1994/Dooms-Enhancement-Suite
    ```
 5. Click Install, then reload the page
 
-Once installed, enable the extension in **Extensions > Doom's Enhancement Suite** and open the settings panel (the **D** icon) to configure everything.
+Once installed, enable the extension in **Extensions > Better Stats** and open the settings panel (the **D** icon) to configure everything.
 
 ---
 
@@ -144,7 +146,7 @@ Save and restore tracker history snapshots. Useful for branching storylines or r
 ## Troubleshooting
 
 ### System Log
-Captures all Doom's Enhancement Suite console messages with timestamps. Open from the bottom of the settings panel to review extension initialization, generation events, and errors.
+Captures all Better Stats console messages with timestamps. Open from the bottom of the settings panel to review extension initialization, generation events, and errors.
 
 ### Notification Log
 Captures every SillyTavern toast notification (API errors, system messages, warnings, etc.) so you can scroll back and see what happened even after the pop-up disappears. Includes Copy All for easy bug reporting.
@@ -201,7 +203,7 @@ machine.
 Copyright (C) 2026 Jordan (DangerDaza). Portions copyright (C) 2024 Marysia
 (marinara_spaghetti), from the RPG Companion extension this was forked from.
 
-Doom's Enhancement Suite is free software under the
+Better Stats is free software under the
 [GNU Affero General Public License v3.0 or later](LICENSE).
 
 **If you reuse code from this project** — including the Present Characters

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **The extension is now called Better Stats.** This fork of Doom's Enhancement Suite has a new name in SillyTavern's extension list, the settings panel and the README, and its links (GitHub star button, update check) point to this fork. Saved settings are not affected.
+
 ### Added
 - **Character Stats.** Every character — NPCs and your own persona — now has a stat sheet: the six D&D attributes (Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma, 1–100) and six states shown as rings (Health, Satiety, Energy, Hygiene, Morale, Mana, 0–100%). Set the starting values in the new **Stats** tab of the Character Workshop, and add stats of your own to a single character with a name, a type (attribute or state) and a description that tells the AI what the stat means.
 - **The AI keeps the stats up to date.** Each stat has an **AI** tick: when it is on, the AI updates the value as the story goes, through a `"stats"` key in the same tracker JSON (states are on by default, attributes are off). Stats with the tick off are still sent as read-only context so they shape what each character can do. Works in Together and Separate/External mode, and also when the tracker prompt has been replaced with your own. Swiping or regenerating a reply first rolls back the stat changes that reply made, without touching values you edited by hand since.

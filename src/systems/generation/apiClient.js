@@ -445,7 +445,7 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
     } catch (error) {
         console.error('[Dooms Tracker] Error updating RPG data:', error);
         if (isExternalMode) {
-            toastr.error(error.message, "Doom's Enhancement Suite External API Error");
+            toastr.error(error.message, "Better Stats External API Error");
         }
     } finally {
         // Restore connection profile AND preset if we switched.

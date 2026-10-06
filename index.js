@@ -332,9 +332,9 @@ async function addExtensionSettings() {
             .catch((e) => console.warn("[Dooms Tracker] What's New failed:", e));
     });
     $('#dooms-github-star-btn').on('click', function () {
-        window.open('https://github.com/DangerDaza/Dooms-Enhancement-Suite', '_blank', 'noopener,noreferrer');
+        window.open('https://github.com/Caged1994/Dooms-Enhancement-Suite', '_blank', 'noopener,noreferrer');
     });
-    fetch('https://api.github.com/repos/DangerDaza/Dooms-Enhancement-Suite', { headers: { 'Accept': 'application/vnd.github+json' } })
+    fetch('https://api.github.com/repos/Caged1994/Dooms-Enhancement-Suite', { headers: { 'Accept': 'application/vnd.github+json' } })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
             if (data && typeof data.stargazers_count === 'number') {
@@ -512,7 +512,7 @@ function populateUpdateBranchDropdownOnce() {
                     }
                 } catch (e) { /* keep fallback */ }
             }
-            if (!repoSlug) repoSlug = 'DangerDaza/Dooms-Enhancement-Suite';
+            if (!repoSlug) repoSlug = 'Caged1994/Dooms-Enhancement-Suite';
             try {
                 const ghResp = await fetch(`https://api.github.com/repos/${repoSlug}/branches?per_page=100`, {
                     headers: { 'Accept': 'application/vnd.github+json' },
@@ -804,7 +804,7 @@ function bindSettingsUI() {
         if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
         applyNewPlayerProfile();
         saveSettings();
-        toastr.success('Defaults restored — reloading...', "Doom's Enhancement Suite", { timeOut: 2500 });
+        toastr.success('Defaults restored — reloading...', "Better Stats", { timeOut: 2500 });
         // saveSettings() only schedules SillyTavern's ~1s debounced POST; a
         // reload before it flushes silently cancels the restore. 2.5s gives
         // the trailing debounce + request comfortable room.
@@ -2314,7 +2314,7 @@ function bindSettingsUI() {
             return;
         }
         const ok = window.confirm(
-            `Switch Doom's Enhancement Suite to the "${selectedBranch}" branch?\n\n` +
+            `Switch Better Stats to the "${selectedBranch}" branch?\n\n` +
             `SillyTavern will reload after switching. Your settings, characters, and chats won't be affected — only the extension's code is replaced.`
         );
         if (!ok) {
@@ -2454,7 +2454,7 @@ async function initUI() {
             // ANY World Info access. Surface the failure and re-trigger the
             // click with a one-shot bypass so ST's native drawer opens.
             console.error('[Dooms Tracker] Lore Library failed to load:', err);
-            try { toastr.error('Lore Library failed to load — opening native World Info.', "Doom's Enhancement Suite"); } catch (e) { }
+            try { toastr.error('Lore Library failed to load — opening native World Info.', "Better Stats"); } catch (e) { }
             _wiInterceptBypassOnce = true;
             $(this).trigger('click');
         });
