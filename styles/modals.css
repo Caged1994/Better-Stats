@@ -7893,3 +7893,163 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 @media (max-width: 720px) {
     .rpg-inspector-diff { grid-template-columns: 1fr; }
 }
+
+
+/* ============================================
+   CHARACTER WORKSHOP — STATS TAB
+   ============================================ */
+#character-workshop-popup .cw-stats-group {
+    margin-bottom: 0.9rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+#character-workshop-popup .cw-stats-group-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: var(--modal-font-small, 0.8rem);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--cw-accent, var(--rpg-highlight, #e94560));
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#character-workshop-popup .cw-stats-group-head .muted {
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: rgba(234, 234, 234, 0.5);
+}
+
+#character-workshop-popup .cw-stat-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto auto 28px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+#character-workshop-popup .cw-stat-row:first-of-type { border-top: none; }
+
+#character-workshop-popup .cw-stat-row.is-custom { background: rgba(255, 255, 255, 0.015); }
+
+#character-workshop-popup .cw-stat-abbr {
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+    padding: 3px 0;
+    border-radius: 4px;
+    color: var(--rpg-text, #eaeaea);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+#character-workshop-popup .cw-stat-swatch {
+    justify-self: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+}
+
+#character-workshop-popup .cw-stat-name {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+#character-workshop-popup .cw-stat-label {
+    font-size: 0.88rem;
+    color: var(--rpg-text, #eaeaea);
+}
+
+#character-workshop-popup .cw-stat-desc {
+    font-size: 0.72rem;
+    color: rgba(234, 234, 234, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#character-workshop-popup .cw-stat-base {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+#character-workshop-popup .cw-stat-base-input {
+    width: 4.2em;
+    padding: 3px 6px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+#character-workshop-popup .cw-stat-unit {
+    display: inline-block;
+    width: 0.9em;
+    font-size: 0.75rem;
+    color: rgba(234, 234, 234, 0.55);
+}
+
+#character-workshop-popup .cw-stat-ai-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(234, 234, 234, 0.75);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+#character-workshop-popup .cw-stat-del-spacer { width: 28px; }
+
+#character-workshop-popup .cw-stats-add {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#character-workshop-popup .cw-stats-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#character-workshop-popup .cw-stats-add-row #cw-stat-new-name { flex: 1 1 180px; min-width: 0; }
+
+#character-workshop-popup .cw-stats-add-row #cw-stat-new-kind { flex: 0 0 auto; width: auto; }
+
+#character-workshop-popup .cw-stats-add-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+#character-workshop-popup .cw-stats-add-error {
+    flex: 1;
+    font-size: 0.78rem;
+    color: #ff8a8a;
+}
+
+@media (max-width: 600px) {
+    #character-workshop-popup .cw-stat-row {
+        grid-template-columns: 28px minmax(0, 1fr) auto auto 24px;
+        gap: 6px;
+        padding: 6px 8px;
+    }
+    #character-workshop-popup .cw-stat-desc { display: none; }
+    #character-workshop-popup .cw-stat-base-input { width: 3.6em; }
+}

@@ -1,0 +1,435 @@
+/**
+ * Character Stats — storage, live values, AI round-trip.
+ *
+ * Every character (NPCs and the player's persona) has a stat sheet: the six
+ * D&D attributes (1–100), the six states drawn as rings (0–100%) and any
+ * custom stats the user added to that character. Each stat has an "ai" flag:
+ * when on, the AI updates it through the "stats" key of the tracker JSON.
+ *
+ * Where things live:
+ *   - Sheet (definitions, base values, ai flags) — shared by every campaign:
+ *       extensionSettings.characterStatSheets.{npc|user}[name]
+ *   - Current values — one set per campaign ("_base" when none is active):
+ *       extensionSettings.characterStatValues[campaignKey]["npc:Name"][statId]
+ *     A value that was never set reads as the base value.
+ *   - Undo for the last AI update, so a swipe/regenerate starts again from
+ *     the values the replaced reply saw:
+ *       chat_metadata.dooms_tracker.statsUndo
+ *
+ * The pure logic (defaults, clamping, prompt text, change detection) is in
+ * src/utils/statsModel.js.
+ */
+import { getContext } from '../../../../../../extensions.js';
+import { chat, chat_metadata } from '../../../../../../../script.js';
+import { extensionSettings, committedTrackerData, lastGeneratedData } from '../../core/state.js';
+import { saveSettings, saveChatData } from '../../core/persistence.js';
+import {
+    resolveSheet,
+    serializeSheet,
+    resolveCurrentValues,
+    clampStatValue,
+    computeAIChanges,
+    mergeChangeSets,
+    changesToRevert,
+    buildStatsPrompt,
+} from '../../utils/statsModel.js';
+
+export const STATS_CHANGED_EVENT = 'dooms:stats-changed';
+const NO_CAMPAIGN = '_base';
+
+// ─── Keys ───────────────────────────────────────────────────────────────────
+
+function ns(isUser) {
+    return isUser ? 'user' : 'npc';
+}
+
+/** Storage key for one character's current values. */
+export function statKey(name, isUser) {
+    return `${ns(isUser)}:${name}`;
+}
+
+/** The bucket current values are read from and written to right now. */
+export function currentCampaignKey() {
+    const id = extensionSettings.lorebook?.activeCampaignId;
+    return typeof id === 'string' && id ? id : NO_CAMPAIGN;
+}
+
+function sheetStore(isUser, create = false) {
+    if (!extensionSettings.characterStatSheets || typeof extensionSettings.characterStatSheets !== 'object') {
+        if (!create) return null;
+        extensionSettings.characterStatSheets = { npc: {}, user: {} };
+    }
+    const root = extensionSettings.characterStatSheets;
+    const k = ns(isUser);
+    if (!root[k] || typeof root[k] !== 'object') {
+        if (!create) return null;
+        root[k] = {};
+    }
+    return root[k];
+}
+
+function valueBucket(campaignKey, create = false) {
+    if (!extensionSettings.characterStatValues || typeof extensionSettings.characterStatValues !== 'object') {
+        if (!create) return null;
+        extensionSettings.characterStatValues = {};
+    }
+    const root = extensionSettings.characterStatValues;
+    if (!root[campaignKey] || typeof root[campaignKey] !== 'object') {
+        if (!create) return null;
+        root[campaignKey] = {};
+    }
+    return root[campaignKey];
+}
+
+/** Case-insensitive own-key lookup. */
+function findKey(obj, name) {
+    if (!obj || typeof obj !== 'object' || !name) return undefined;
+    if (Object.prototype.hasOwnProperty.call(obj, name)) return name;
+    const lower = String(name).toLowerCase();
+    return Object.keys(obj).find(k => k.toLowerCase() === lower);
+}
+
+// ─── Events ─────────────────────────────────────────────────────────────────
+
+/** Tells open stat views to repaint. */
+export function notifyStatsChanged(detail = {}) {
+    try {
+        window.dispatchEvent(new CustomEvent(STATS_CHANGED_EVENT, { detail }));
+    } catch (e) { /* no window (tests) */ }
+}
+
+// ─── Sheets ─────────────────────────────────────────────────────────────────
+
+/** The character's full, resolved stat list (defaults when nothing saved). */
+export function getStatSheet(name, isUser = false) {
+    const store = sheetStore(isUser);
+    const key = findKey(store, name);
+    return resolveSheet(key !== undefined ? store[key] : null);
+}
+
+/** Whether anything was ever saved for this character. */
+export function hasSavedStatSheet(name, isUser = false) {
+    return findKey(sheetStore(isUser), name) !== undefined;
+}
+
+/**
+ * Saves a character's stat list (definitions, base values, ai flags) and
+ * drops current values of custom stats that no longer exist, in every
+ * campaign. Does not persist by itself when `persist` is false (the Workshop
+ * saves once at the end of its commit).
+ */
+export function saveStatSheet(name, isUser, stats, { persist = true } = {}) {
+    if (!name) return;
+    const store = sheetStore(isUser, true);
+    const existing = findKey(store, name);
+    if (existing !== undefined && existing !== name) delete store[existing];
+    store[name] = serializeSheet(stats);
+
+    const ids = new Set((stats || []).map(s => s.id));
+    const key = statKey(name, isUser);
+    const root = extensionSettings.characterStatValues;
+    if (root && typeof root === 'object') {
+        for (const bucket of Object.values(root)) {
+            const vals = bucket && bucket[key];
+            if (!vals) continue;
+            for (const id of Object.keys(vals)) if (!ids.has(id)) delete vals[id];
+        }
+    }
+    if (persist) saveSettings();
+    notifyStatsChanged({ key });
+}
+
+/** Removes a character's sheet and every current value, in every campaign. */
+export function deleteStatSheet(name, isUser = false, { persist = false } = {}) {
+    if (!name) return;
+    const store = sheetStore(isUser);
+    const k = findKey(store, name);
+    if (k !== undefined) delete store[k];
+    const root = extensionSettings.characterStatValues;
+    if (root && typeof root === 'object') {
+        const prefix = `${ns(isUser)}:`;
+        const lower = String(name).toLowerCase();
+        for (const bucket of Object.values(root)) {
+            if (!bucket || typeof bucket !== 'object') continue;
+            for (const vk of Object.keys(bucket)) {
+                if (vk.startsWith(prefix) && vk.slice(prefix.length).toLowerCase() === lower) delete bucket[vk];
+            }
+        }
+    }
+    if (persist) saveSettings();
+    notifyStatsChanged({ key: statKey(name, isUser) });
+}
+
+/** Forgets the current values kept for a deleted campaign. */
+export function deleteCampaignStatValues(campaignId) {
+    const root = extensionSettings.characterStatValues;
+    if (root && typeof root === 'object' && campaignId && root[campaignId]) delete root[campaignId];
+}
+
+// ─── Current values ─────────────────────────────────────────────────────────
+
+function storedValues(name, isUser, campaignKey = currentCampaignKey()) {
+    const bucket = valueBucket(campaignKey);
+    if (!bucket) return null;
+    const k = findKey(bucket, statKey(name, isUser));
+    return k !== undefined ? bucket[k] : null;
+}
+
+/** { statId: value } for the active campaign, base filling the gaps. */
+export function getCurrentStatValues(name, isUser = false, stats = null) {
+    const list = stats || getStatSheet(name, isUser);
+    return resolveCurrentValues(list, storedValues(name, isUser));
+}
+
+/** Sets one current value in the active campaign. Returns the stored value. */
+export function setCurrentStatValue(name, isUser, statId, value, { persist = true, silent = false } = {}) {
+    const stat = getStatSheet(name, isUser).find(s => s.id === statId);
+    if (!stat) return null;
+    const v = clampStatValue(stat, value);
+    if (v === null) return null;
+    const bucket = valueBucket(currentCampaignKey(), true);
+    const key = statKey(name, isUser);
+    const existing = findKey(bucket, key);
+    const target = existing !== undefined ? existing : key;
+    if (!bucket[target] || typeof bucket[target] !== 'object') bucket[target] = {};
+    bucket[target][statId] = v;
+    if (persist) saveSettings();
+    if (!silent) notifyStatsChanged({ key });
+    return v;
+}
+
+/** Puts every current value of the character back to its base, in the active campaign. */
+export function resetCurrentStatValues(name, isUser = false) {
+    const bucket = valueBucket(currentCampaignKey());
+    if (bucket) {
+        const k = findKey(bucket, statKey(name, isUser));
+        if (k !== undefined) delete bucket[k];
+    }
+    saveSettings();
+    notifyStatsChanged({ key: statKey(name, isUser) });
+}
+
+/** Reads a current value by storage key (used by undo). */
+function readCurrentByKey(key, statId) {
+    const idx = key.indexOf(':');
+    const isUser = key.slice(0, idx) === 'user';
+    const name = key.slice(idx + 1);
+    return getCurrentStatValues(name, isUser)[statId];
+}
+
+function writeCurrentByKey(key, statId, value) {
+    const idx = key.indexOf(':');
+    const isUser = key.slice(0, idx) === 'user';
+    const name = key.slice(idx + 1);
+    return setCurrentStatValue(name, isUser, statId, value, { persist: false, silent: true });
+}
+
+// ─── Who has stats right now ────────────────────────────────────────────────
+
+/**
+ * The active player character's Workshop name. Mirrors
+ * portraitBar.resolveActiveUserName (kept here so the generation layer does
+ * not import UI code): manual pick → persona link → the only entry.
+ */
+export function resolveActivePersonaName() {
+    const s = extensionSettings || {};
+    const userMap = s.userCharacters && typeof s.userCharacters === 'object' ? s.userCharacters : {};
+    if (s.activeUserCharacter && userMap[s.activeUserCharacter]) return s.activeUserCharacter;
+    let currentAvatar = '';
+    try {
+        const ctx = window?.SillyTavern?.getContext ? window.SillyTavern.getContext() : null;
+        currentAvatar = (ctx && ctx.user_avatar) || window?.user_avatar || '';
+    } catch (e) { currentAvatar = ''; }
+    if (currentAvatar) {
+        for (const [n, entry] of Object.entries(userMap)) {
+            if (entry && entry.linkedPersona === currentAvatar) return n;
+        }
+    }
+    const names = Object.keys(userMap);
+    return names.length === 1 ? names[0] : null;
+}
+
+function parseCharacters(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const list = Array.isArray(parsed) ? parsed : (parsed?.characters || []);
+        return Array.isArray(list) ? list : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function removedLowerSet() {
+    const out = new Set();
+    const lists = [extensionSettings.removedCharacters, chat_metadata?.dooms_tracker?.removedCharacters];
+    for (const list of lists) {
+        if (Array.isArray(list)) for (const n of list) if (typeof n === 'string') out.add(n.toLowerCase());
+    }
+    return out;
+}
+
+/**
+ * Characters whose stats matter for the next reply: the active persona plus
+ * the NPCs in the latest tracker data.
+ * @param {{source?: 'committed'|'displayed'}} [options]
+ * @returns {Array<{name: string, isUser: boolean}>}
+ */
+export function getStatCharacters({ source = 'committed' } = {}) {
+    const out = [];
+    const seen = new Set();
+    const persona = resolveActivePersonaName();
+    const userNames = new Set(Object.keys(extensionSettings.userCharacters || {}).map(n => n.toLowerCase()));
+    if (persona) {
+        out.push({ name: persona, isUser: true });
+        seen.add(persona.toLowerCase());
+    }
+    let userName = '';
+    try { userName = String(getContext().name1 || '').toLowerCase(); } catch (e) {}
+    const raw = source === 'displayed'
+        ? (lastGeneratedData.characterThoughts || committedTrackerData.characterThoughts)
+        : (committedTrackerData.characterThoughts || lastGeneratedData.characterThoughts);
+    const removed = removedLowerSet();
+    for (const c of parseCharacters(raw)) {
+        const name = typeof c?.name === 'string' ? c.name.trim() : '';
+        if (!name) continue;
+        const lower = name.toLowerCase();
+        if (seen.has(lower) || userNames.has(lower) || lower === userName || removed.has(lower)) continue;
+        seen.add(lower);
+        out.push({ name, isUser: false });
+    }
+    return out;
+}
+
+// ─── Prompt ─────────────────────────────────────────────────────────────────
+
+/** Master switch (Settings may expose it later; on unless explicitly off). */
+export function isCharacterStatsEnabled() {
+    return extensionSettings.enabled !== false && extensionSettings.characterStatsEnabled !== false;
+}
+
+/**
+ * The stats section for the next generation, or '' when there is nothing to
+ * send. `standalone` is for when no other tracker is enabled, so the stats
+ * become the whole JSON block.
+ */
+export function buildStatsPromptForGeneration({ compact = true, standalone = false } = {}) {
+    if (!isCharacterStatsEnabled()) return '';
+    const entries = getStatCharacters().map(({ name, isUser }) => {
+        const stats = getStatSheet(name, isUser);
+        return {
+            displayName: name,
+            isUser,
+            stats,
+            current: getCurrentStatValues(name, isUser, stats),
+        };
+    });
+    return buildStatsPrompt(entries, { compact, standalone });
+}
+
+/**
+ * One plain line per character ("Name: Health 80%, ... STR 60, ..."), for
+ * the separate-mode context block that the roleplay reply reads.
+ */
+export function buildStatsContextSummary() {
+    if (!isCharacterStatsEnabled()) return '';
+    const lines = getStatCharacters().map(({ name, isUser }) => {
+        const stats = getStatSheet(name, isUser);
+        const cur = getCurrentStatValues(name, isUser, stats);
+        const states = stats.filter(s => s.kind === 'state').map(s => `${s.name} ${cur[s.id]}%`);
+        const attrs = stats.filter(s => s.kind === 'attribute').map(s => `${s.abbr || s.name} ${cur[s.id]}`);
+        return `${name}${isUser ? ' (player character)' : ''}: ${[...states, ...attrs].join(', ')}`;
+    });
+    return lines.length ? 'Character stats:\n' + lines.join('\n') : '';
+}
+
+// ─── Applying the AI's update ───────────────────────────────────────────────
+
+function buildTargets() {
+    let userName = '';
+    try { userName = getContext().name1 || ''; } catch (e) {}
+    const targets = [];
+    const known = new Set();
+    const add = (name, isUser) => {
+        const key = statKey(name, isUser);
+        if (known.has(key.toLowerCase())) return;
+        known.add(key.toLowerCase());
+        const stats = getStatSheet(name, isUser);
+        const names = [name];
+        if (isUser && userName && userName.toLowerCase() !== name.toLowerCase()) names.push(userName);
+        if (!isUser) {
+            const aliases = extensionSettings.characterAliases?.[name];
+            if (Array.isArray(aliases)) names.push(...aliases.filter(a => typeof a === 'string'));
+        }
+        targets.push({ key, name, isUser, names, stats, current: getCurrentStatValues(name, isUser, stats) });
+    };
+    for (const c of getStatCharacters({ source: 'displayed' })) add(c.name, c.isUser);
+    for (const c of getStatCharacters({ source: 'committed' })) add(c.name, c.isUser);
+    // Anyone else with a saved sheet can be addressed by name too.
+    const npcSheets = sheetStore(false) || {};
+    for (const name of Object.keys(npcSheets)) add(name, false);
+    return targets;
+}
+
+/**
+ * Applies the "stats" object of a fresh AI reply to the active campaign's
+ * current values and records an undo for that message.
+ * @param {*} rawStats - parsed or JSON string
+ * @param {number} messageIndex - the reply's index in the chat
+ * @returns {number} how many values changed
+ */
+export function applyAIStatUpdates(rawStats, messageIndex) {
+    if (!isCharacterStatsEnabled() || rawStats === null || rawStats === undefined) return 0;
+    const changes = computeAIChanges(buildTargets(), rawStats);
+    if (!changes.length) return 0;
+    for (const c of changes) writeCurrentByKey(c.key, c.statId, c.after);
+    const campaign = currentCampaignKey();
+    try {
+        if (chat_metadata) {
+            if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
+            const prev = chat_metadata.dooms_tracker.statsUndo;
+            const sameMessage = prev && prev.messageIndex === messageIndex && prev.campaign === campaign;
+            chat_metadata.dooms_tracker.statsUndo = {
+                messageIndex,
+                campaign,
+                changes: sameMessage ? mergeChangeSets(prev.changes, changes) : changes,
+            };
+        }
+    } catch (e) { /* undo is best-effort */ }
+    saveSettings();
+    notifyStatsChanged({ source: 'ai' });
+    return changes.length;
+}
+
+/**
+ * Before a swipe or regenerate replaces the last reply, roll back the stat
+ * changes that reply made — only the ones still holding the AI's value, so
+ * manual edits survive. Safe to call more than once (the record is consumed).
+ * @param {number} [replacedIndex] - index of the reply being replaced
+ */
+export function revertAIStatsForReplacedMessage(replacedIndex) {
+    try {
+        const rec = chat_metadata?.dooms_tracker?.statsUndo;
+        if (!rec || !Array.isArray(rec.changes)) return 0;
+        const lastIdx = Array.isArray(chat) ? chat.length - 1 : -1;
+        const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
+        // Only the reply that is actually being replaced (regenerate may have
+        // already dropped it from the chat, hence the one-step tolerance).
+        if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
+        delete chat_metadata.dooms_tracker.statsUndo;
+        if (rec.campaign !== currentCampaignKey()) return 0;
+        const todo = changesToRevert(rec.changes, readCurrentByKey);
+        for (const c of todo) {
+            if (typeof c.before === 'number') writeCurrentByKey(c.key, c.statId, c.before);
+        }
+        if (todo.length) {
+            saveSettings();
+            notifyStatsChanged({ source: 'undo' });
+        }
+        saveChatData();
+        return todo.length;
+    } catch (e) {
+        console.warn('[Dooms Tracker] Stats: undo failed', e);
+        return 0;
+    }
+}

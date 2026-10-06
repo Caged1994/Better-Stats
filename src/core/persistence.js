@@ -580,6 +580,9 @@ export function saveChatData({ immediate = false } = {}) {
         // with immediate saves, wiped from disk on the next generation).
         knivesEnabled: chat_metadata.dooms_tracker?.knivesEnabled === true,
         characterSheets: chat_metadata.dooms_tracker?.characterSheets || {},
+        // Undo for the last AI stat update (characterStats.js) — consumed
+        // when that reply is swiped or regenerated.
+        statsUndo: chat_metadata.dooms_tracker?.statsUndo || null,
         timestamp: Date.now()
     };
     // Persist per-chat character tracking data when enabled

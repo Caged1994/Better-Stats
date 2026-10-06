@@ -36,6 +36,7 @@ import { updatePortraitBar } from '../ui/portraitBar.js';
 import { updateWeatherEffect } from '../ui/weatherEffects.js';
 // Name Ban
 import { applyCharacterAliases } from '../features/characterAliases.js';
+import { applyAIStatUpdates, revertAIStatsForReplacedMessage } from '../features/characterStats.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -205,6 +206,16 @@ export async function onMessageReceived(data) {
                     harvestNewSpeakerColors(lastMessage.mes, parsedData.characterThoughts);
                 } catch (e) {
                     console.warn('[Dooms Tracker] harvestNewSpeakerColors failed:', e);
+                }
+            }
+            // Character Stats: apply the AI's stat update for fresh replies only
+            // (this handler also runs when a chat is loaded — re-applying an old
+            // reply's values there would overwrite later manual edits).
+            if (parsedData.stats && isAwaitingNewMessage) {
+                try {
+                    applyAIStatUpdates(parsedData.stats, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Stats: applying AI update failed', e);
                 }
             }
             // Store RPG data for this specific swipe in the message's extra field
@@ -452,6 +463,9 @@ export function onMessageSwiped(messageIndex) {
         // This is a NEW swipe that will trigger generation
         setLastActionWasSwipe(true);
         setIsAwaitingNewMessage(true);
+        // The reply being replaced may have changed character stats: start
+        // the new swipe from the values that reply saw.
+        try { revertAIStatsForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

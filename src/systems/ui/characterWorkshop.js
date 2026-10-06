@@ -73,6 +73,10 @@ import { getContext } from '../../../../../../extensions.js';
 import { power_user } from '../../../../../../power-user.js';
 import { escapeHtml } from '../../utils/html.js';
 import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
+// Character Stats: the sheet (definitions, base values, AI flags) is shared by
+// every campaign, so it travels across version switches like colour/aliases.
+import { getStatSheet, saveStatSheet, deleteStatSheet } from '../features/characterStats.js';
+import { createCustomStat, clampStatValue } from '../../utils/statsModel.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -500,6 +504,7 @@ function loadVersion(name, isUser, versionId, { fullReset = false, carry = null 
     if (carry) {
         if (carry.dirty?.color) { draft.color = carry.color; draft.dirty.color = true; }
         if (carry.dirty?.aliases) { draft.aliases = [...(carry.aliases || [])]; draft.dirty.aliases = true; }
+        if (carry.dirty?.stats) { draft.stats = cloneStats(carry.stats); draft.dirty.stats = true; }
     }
     // Stamp the modal with a mode attribute so CSS can flip NPC-only vs
     // user-only sections without a JS class-toggle on every section.
@@ -514,14 +519,92 @@ function loadVersion(name, isUser, versionId, { fullReset = false, carry = null 
     renderInjection();
     renderKnives();
     renderAliases();
+    renderStats();
     renderVersionStrip();
     if (fullReset) {
         $modal.find('#cw-knife-input').val('');
         $modal.find('#cw-alias-input').val('');
+        resetStatAddForm();
         activatePane('identity');
     }
     // Suggestions generated for another version must not be kept for this one.
     clearKnifeSuggestions();
+}
+
+/**
+ * The edits that do not belong to a single version (colour, aliases, stats)
+ * and so travel with the user when another version is put on the stage.
+ */
+function versionIndependentCarry() {
+    return {
+        color: draft.color,
+        aliases: draft.aliases,
+        stats: draft.stats,
+        dirty: { color: draft.dirty.color, aliases: draft.dirty.aliases, stats: draft.dirty.stats },
+    };
+}
+
+/** Deep-enough copy of a resolved stat list (entries are flat objects). */
+function cloneStats(stats) {
+    return Array.isArray(stats) ? stats.map(s => ({ ...s })) : [];
+}
+
+// ─── Stats tab ──────────────────────────────────────────────────────────────
+
+function statRowHtml(stat) {
+    const isState = stat.kind === 'state';
+    const range = isState ? '0–100%' : '1–100';
+    const swatch = isState
+        ? `<span class="cw-stat-swatch" style="background:${escapeHtml(stat.color || '#888')}"></span>`
+        : `<span class="cw-stat-abbr">${escapeHtml(stat.abbr || stat.name.slice(0, 3).toUpperCase())}</span>`;
+    const tip = stat.description ? ` title="${escapeHtml(stat.description)}"` : '';
+    return `
+        <div class="cw-stat-row${stat.builtin ? '' : ' is-custom'}" data-stat="${escapeHtml(stat.id)}">
+            ${swatch}
+            <div class="cw-stat-name"${tip}>
+                <span class="cw-stat-label">${escapeHtml(stat.name)}</span>
+                ${stat.builtin ? '' : `<span class="cw-stat-desc">${escapeHtml(stat.description || 'No description')}</span>`}
+            </div>
+            <label class="cw-stat-base" title="Starting value (${range})">
+                <input type="number" class="rpg-input cw-stat-base-input" min="${stat.min}" max="${stat.max}" step="1"
+                    value="${escapeHtml(String(stat.base))}" aria-label="${escapeHtml(stat.name)} starting value"><span class="cw-stat-unit">${isState ? '%' : ''}</span>
+            </label>
+            <label class="cw-stat-ai-toggle" title="Let the AI change ${escapeHtml(stat.name)}">
+                <input type="checkbox" class="cw-stat-ai-input"${stat.ai ? ' checked' : ''}> AI
+            </label>
+            ${stat.builtin ? '<span class="cw-stat-del-spacer"></span>' : `<button type="button" class="rpg-dc-knife-btn cw-stat-delete" title="Remove ${escapeHtml(stat.name)}"><i class="fa-solid fa-trash"></i></button>`}
+        </div>`;
+}
+
+function renderStats() {
+    const $host = $modal.find('#cw-stats-editor');
+    if (!$host.length) return;
+    const stats = draft?.stats || [];
+    const attrs = stats.filter(s => s.kind === 'attribute');
+    const states = stats.filter(s => s.kind === 'state');
+    $host.html(`
+        <div class="cw-stats-group">
+            <div class="cw-stats-group-head"><span>Attributes</span><span class="muted">1–100 · read by the AI</span></div>
+            ${attrs.map(statRowHtml).join('')}
+        </div>
+        <div class="cw-stats-group">
+            <div class="cw-stats-group-head"><span>States</span><span class="muted">0–100% · rings in the Stats panel</span></div>
+            ${states.map(statRowHtml).join('')}
+        </div>`);
+}
+
+/** Clears the "Add a stat" form; the AI box follows the kind's default. */
+function resetStatAddForm() {
+    $modal.find('#cw-stat-new-name').val('');
+    $modal.find('#cw-stat-new-desc').val('');
+    $modal.find('#cw-stat-new-kind').val('attribute');
+    $modal.find('#cw-stat-new-ai').prop('checked', false);
+    $modal.find('#cw-stat-new-error').text('');
+}
+
+function findDraftStat(el) {
+    const id = $(el).closest('.cw-stat-row').attr('data-stat');
+    return id && draft ? draft.stats.find(s => s.id === id) : null;
 }
 
 /** After a successful commit the draft matches the stores again. */
@@ -589,7 +672,7 @@ async function switchVersion(versionId) {
             $modal.find('#cw-alias-input').val('');
         }
     }
-    const carry = { color: draft.color, aliases: draft.aliases, dirty: { color: draft.dirty.color, aliases: draft.dirty.aliases } };
+    const carry = versionIndependentCarry();
     const name = draft.name;
     const $editor = $modal.find('.cw-editor');
     const animate = !motionDisabled();
@@ -682,7 +765,7 @@ export function refreshWorkshopIfOpen() {
         $modal.find('#cw-knife-input').val('');
         $modal.find('#cw-alias-input').val('');
     }
-    const carry = { color: draft.color, aliases: draft.aliases, dirty: { color: draft.dirty.color, aliases: draft.dirty.aliases } };
+    const carry = versionIndependentCarry();
     loadVersion(name, false, null, { carry });
 }
 
@@ -1177,7 +1260,8 @@ function buildDraft(name, isUser = false, versionId = null) {
             // Aliases are NPC-only (a persona's name is the player's own);
             // kept on the draft so shared render code can no-op safely.
             aliases: [],
-            dirty: { color: false, avatar: false, injection: false, relationship: false, pronouns: false, linkedPersona: false, knives: false, aliases: false },
+            stats: cloneStats(getStatSheet(name, true)),
+            dirty: { color: false, avatar: false, injection: false, relationship: false, pronouns: false, linkedPersona: false, knives: false, aliases: false, stats: false },
         };
     }
     const version = versionId || defaultVersionFor(name);
@@ -1202,7 +1286,8 @@ function buildDraft(name, isUser = false, versionId = null) {
         isLive: live,
         color: activeColors[name] || '',
         aliases: Array.isArray(npcAliases) ? npcAliases.filter(a => typeof a === 'string') : [],
-        dirty: { color: false, avatar: false, injection: false, relationship: false, knives: false, aliases: false, appearance: false },
+        stats: cloneStats(getStatSheet(name, false)),
+        dirty: { color: false, avatar: false, injection: false, relationship: false, knives: false, aliases: false, appearance: false, stats: false },
     };
     if (live) {
         const inj = extensionSettings?.characterInjection?.[name] || {};
@@ -1805,6 +1890,64 @@ function bindStaticListeners() {
         draft.dirty.knives = true;
         renderKnives();
     });
+    // Stats — sheet edits live on the draft and persist on Save.
+    $modal.on('change.cw', '#cw-stats-editor .cw-stat-base-input', function () {
+        const stat = findDraftStat(this);
+        if (!stat) return;
+        const v = clampStatValue(stat, $(this).val());
+        if (v === null) { $(this).val(stat.base); return; }
+        $(this).val(v);
+        if (v === stat.base) return;
+        stat.base = v;
+        draft.dirty.stats = true;
+    });
+    $modal.on('change.cw', '#cw-stats-editor .cw-stat-ai-input', function () {
+        const stat = findDraftStat(this);
+        if (!stat) return;
+        stat.ai = $(this).is(':checked');
+        draft.dirty.stats = true;
+    });
+    $modal.on('click.cw', '#cw-stats-editor .cw-stat-delete', function () {
+        const stat = findDraftStat(this);
+        if (!stat || stat.builtin) return;
+        draft.stats = draft.stats.filter(s => s.id !== stat.id);
+        draft.dirty.stats = true;
+        renderStats();
+    });
+    // The AI box follows the kind's default until the user touches it.
+    $modal.on('change.cw', '#cw-stat-new-kind', function () {
+        $modal.find('#cw-stat-new-ai').prop('checked', $(this).val() === 'state');
+    });
+    const addStat = () => {
+        if (!draft) return;
+        const $err = $modal.find('#cw-stat-new-error');
+        const result = createCustomStat(draft.stats, {
+            name: $modal.find('#cw-stat-new-name').val(),
+            description: $modal.find('#cw-stat-new-desc').val(),
+            kind: $modal.find('#cw-stat-new-kind').val(),
+            ai: $modal.find('#cw-stat-new-ai').is(':checked'),
+        });
+        if (result.error) {
+            $err.text(result.error);
+            return;
+        }
+        // Keep the documented order: attributes before states, customs after built-ins.
+        const stat = result.stat;
+        const lastOfKind = draft.stats.map(s => s.kind).lastIndexOf(stat.kind);
+        draft.stats.splice(lastOfKind + 1, 0, stat);
+        draft.dirty.stats = true;
+        resetStatAddForm();
+        renderStats();
+        $modal.find(`#cw-stats-editor .cw-stat-row[data-stat="${stat.id}"]`)[0]?.scrollIntoView({ block: 'nearest' });
+    };
+    $modal.on('click.cw', '#cw-stat-add', addStat);
+    $modal.on('keydown.cw', '#cw-stat-new-name', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addStat(); }
+    });
+    $modal.on('input.cw', '#cw-stat-new-name', function () {
+        $modal.find('#cw-stat-new-error').text('');
+    });
+
     // Aliases — other names that resolve to this card. Edits live on the
     // draft and persist on Save.
     const addAlias = () => {
@@ -2512,6 +2655,13 @@ function commitDraft() {
     const name = draft.name;
     let changed = false;
 
+    // Stats are shared by every version and campaign — saved the same way
+    // whatever version is on the stage, for NPCs and personas alike.
+    if (draft.dirty.stats) {
+        saveStatSheet(name, draft.isUser, draft.stats, { persist: false });
+        changed = true;
+    }
+
     // User-character mode: write the whole entry into a single namespace.
     if (draft.isUser) {
         if (!extensionSettings.userCharacters) extensionSettings.userCharacters = {};
@@ -2909,6 +3059,7 @@ function deleteCharacter(name) {
         if (extensionSettings.activeUserCharacter === name) {
             extensionSettings.activeUserCharacter = null;
         }
+        deleteStatSheet(name, true);
         saveOrWarn(saveSettings, 'settings');
         // A persona copied from an NPC shares the NPC's portrait file —
         // only files nothing else references are deleted.
@@ -2935,6 +3086,8 @@ function deleteCharacter(name) {
     // Aliases too — an orphaned alias entry would keep silently renaming a
     // future, unrelated character to this deleted one.
     if (extensionSettings.characterAliases) delete extensionSettings.characterAliases[name];
+    // Stat sheet and its per-campaign values.
+    deleteStatSheet(name, false);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata. Without wiping those, the Roster grid (which
     // reads via the active getters) shows the character right back after

@@ -2446,6 +2446,7 @@
                     <button type="button" data-pane="expressions" title="Expressions">&#128516; <span class="cw-tab-label">Expressions</span></button>
                     <button type="button" data-pane="injection" title="Injection">&#128137; <span class="cw-tab-label">Injection</span></button>
                     <button type="button" data-pane="knives" title="Knives">&#128298; <span class="cw-tab-label">Knives</span></button>
+                    <button type="button" data-pane="stats" title="Stats">&#128202; <span class="cw-tab-label">Stats</span></button>
                 </nav>
                 <div class="workshop-pane-host">
 
@@ -2730,6 +2731,45 @@
                                 separate API request.</span>
                         </div>
                         <div id="cw-knife-suggestions" hidden></div>
+                    </div>
+                </section>
+
+                <!-- STATS -->
+                <section class="rpg-editor-pane" data-pane="stats">
+                    <div class="rpg-editor-section">
+                        <h4>&#128202; Stats</h4>
+                        <p class="helper">Starting values for this character, shared by every campaign. The values
+                            the story changes are kept separately for each campaign &mdash; see and edit them in the
+                            <strong>Stats</strong> panel (right-click the portrait &rarr; Stats). Tick
+                            <strong>AI</strong> to let the AI change a stat as the story goes; untick it to change it
+                            only by hand. The AI still reads every stat.</p>
+                        <div id="cw-stats-editor"></div>
+                    </div>
+                    <div class="rpg-editor-section">
+                        <h4>&#10133; Add a stat</h4>
+                        <p class="helper">Custom stats belong to this character only. The description tells the AI
+                            what the stat means and how it should move.</p>
+                        <div class="cw-stats-add">
+                            <div class="cw-stats-add-row">
+                                <input type="text" id="cw-stat-new-name" class="rpg-input" maxlength="40"
+                                    placeholder="Name (e.g. Sanity, Luck, Reputation)">
+                                <select id="cw-stat-new-kind" class="rpg-input" title="Attribute: a 1&ndash;100 score. State: a 0&ndash;100% gauge drawn as a ring.">
+                                    <option value="attribute">Attribute (1&ndash;100)</option>
+                                    <option value="state">State (0&ndash;100%)</option>
+                                </select>
+                                <label class="cw-stat-ai-toggle" title="Let the AI change this stat">
+                                    <input type="checkbox" id="cw-stat-new-ai"> AI
+                                </label>
+                            </div>
+                            <textarea id="cw-stat-new-desc" class="rpg-textarea" rows="2" maxlength="400"
+                                placeholder="What it represents and what raises or lowers it..."></textarea>
+                            <div class="cw-stats-add-actions">
+                                <span class="cw-stats-add-error" id="cw-stat-new-error" role="alert"></span>
+                                <button type="button" class="rpg-btn" id="cw-stat-add">
+                                    <i class="fa-solid fa-plus"></i> Add Stat
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

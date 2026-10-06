@@ -28,6 +28,7 @@ import { recordSeparateTrackerPrompt } from './inspector.js';
 import { renderInfoBox } from '../rendering/infoBox.js';
 import { removeLocks } from './lockManager.js';
 import { applyCharacterAliases } from '../features/characterAliases.js';
+import { applyAIStatUpdates } from '../features/characterStats.js';
 import { renderThoughts, updateChatThoughts } from '../rendering/thoughts.js';
 import { renderQuests } from '../rendering/quests.js';
 import { i18n } from '../../core/i18n.js';
@@ -348,6 +349,15 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
             }
             // Store RPG data for the last assistant message (separate mode)
             const lastMessage = chat && chat.length > 0 ? chat[chat.length - 1] : null;
+            // Character Stats: the tracker call was given the current values,
+            // so its "stats" are the new ones for this reply.
+            if (parsedData.stats) {
+                try {
+                    applyAIStatUpdates(parsedData.stats, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Stats: applying AI update failed', e);
+                }
+            }
             // Update lastGeneratedData for display (regardless of message type)
             if (parsedData.quests) {
                 lastGeneratedData.quests = parsedData.quests;

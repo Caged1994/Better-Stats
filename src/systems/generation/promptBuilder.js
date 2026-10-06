@@ -14,6 +14,7 @@ import {
     toFieldKey
 } from './jsonPromptHelpers.js';
 import { applyLocks } from './lockManager.js';
+import { buildStatsPromptForGeneration, buildStatsContextSummary } from '../features/characterStats.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -296,6 +297,11 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         instructions += '\n' + (override
             ? override.replace(/{userName}/g, userName)
             : buildTrackerPromptBlock(userName, compact));
+        // Character Stats ride in the same JSON object. Appended after the
+        // block (not inside its FORMAT spec) so they still reach the AI when
+        // the user has replaced the tracker prompt with their own text.
+        const statsSection = buildStatsPromptForGeneration({ compact });
+        if (statsSection) instructions += '\n\n' + statsSection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -307,7 +313,17 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
                 instructions += `\n\nAfter updating the trackers, continue directly from where the last message in the chat history left off. Ensure the trackers you provide naturally reflect and influence the narrative. Character behavior, dialogue, and story events should acknowledge these conditions when relevant, such as environmental factors shaping the scene, a character's emotional state coloring their responses, and so on. Remember, all bracketed placeholders (e.g., [Location], [Mood Emoji]) MUST be replaced with actual content without the square brackets.\n\n`;
             }
         }
+    } else {
+        // No tracker section is enabled, but Character Stats still need a
+        // JSON block of their own to come back through.
+        const statsSection = buildStatsPromptForGeneration({ compact, standalone: true });
+        if (statsSection) {
+            instructions += '\n' + statsSection;
+            if (includeContinuation) {
+                instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
+            }
         }
+    }
     // Append HTML prompt if enabled AND includeHtmlPrompt is true
     if (extensionSettings.enableHtmlPrompt && includeHtmlPrompt) {
         // Add newlines only if we had tracker instructions
@@ -747,6 +763,14 @@ export function generateContextualSummary() {
         } catch (e) {
             console.warn('[Dooms Tracker] Failed to format characters for context:', e);
         }
+    }
+    // Character Stats — so the roleplay reply can reflect hunger, fatigue,
+    // strength and so on (the separate tracker call keeps them updated).
+    try {
+        const stats = buildStatsContextSummary();
+        if (stats) summary += stats + '\n';
+    } catch (e) {
+        console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }
     return summary.trim();
 }

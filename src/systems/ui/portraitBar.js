@@ -218,6 +218,9 @@ export function initPortraitBar() {
             <div class="dooms-pb-ctx-item" data-action="character-sheet">
                 <i class="fa-solid fa-scroll"></i> Character Sheet
             </div>
+            <div class="dooms-pb-ctx-item" data-action="stats" title="Health, hunger, energy and the other stats of this character — can be popped out into its own window">
+                <i class="fa-solid fa-chart-simple"></i> Stats
+            </div>
             <div class="dooms-pb-ctx-item" data-action="regenerate-portrait" title="Generate a fresh AI portrait for this character — the current one is kept and can be restored (needs the Image Generation extension)">
                 <i class="fa-solid fa-arrows-rotate"></i> Regenerate Portrait
             </div>
@@ -403,6 +406,11 @@ export function initPortraitBar() {
             ensureSettingsUI().then(() => {
                 window.dispatchEvent(new CustomEvent('dooms:open-workshop', { detail: { characterName, isUser } }));
             }).catch(() => {});
+        } else if (action === 'stats') {
+            // Lazy: the panel module (and its stylesheet) load on first use.
+            import('./statsPanel.js')
+                .then(({ openStatsPanel }) => openStatsPanel(characterName, isUser))
+                .catch(err => console.error('[Dooms Tracker] Stats panel failed to open:', err));
         } else if (action === 'cancel-inject') {
             window.dispatchEvent(new CustomEvent('dooms:cancel-inject', { detail: { name: characterName } }));
         } else if (action === 'regenerate-portrait') {

@@ -47,6 +47,13 @@ Right-click any character in the portrait bar and select **Character Sheet** to 
 <img width="1258" height="1114" alt="image" src="https://github.com/user-attachments/assets/74b703ab-3e9c-444c-8e32-f06be79a33df" />
 
 
+### Character Stats
+Every character, your persona included, has a stat sheet: the six D&D attributes (STR, DEX, CON, INT, WIS, CHA, 1–100) and six states drawn as rings (Health, Satiety, Energy, Hygiene, Morale, Mana, 0–100%). Starting values live in the **Stats** tab of the Character Workshop, where you can also add custom stats to a single character with a description of what they represent.
+
+Each stat has an **AI** tick. Ticked stats are updated by the AI as the story goes (through a `"stats"` key in the tracker JSON); unticked ones are only changed by hand, but the AI still reads them. Starting values are shared by every campaign, while the current values are kept per Lore Library campaign. Swiping or regenerating a reply rolls back the changes it made.
+
+Right-click any portrait and pick **Stats** to open the stats panel: rings for the states, scores for the attributes, a tab per character in the scene, and click-to-edit values. The panel can be dragged around or popped out into its own browser window, which stays in sync.
+
 ### Scene Tracker
 Compact scene info blocks injected after assistant messages in chat. Displays time, date, location, weather, present characters, active quest, and recent events. Placed outside the message text so TTS won't read them. Multiple layout modes available:
 - **Grid** — 2-column layout
