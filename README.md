@@ -15,7 +15,7 @@ This is a work in progress. Constructive criticism and contributions are welcome
 3. Click **Install Extension**
 4. Paste this URL:
    ```
-   https://github.com/Caged1994/Dooms-Enhancement-Suite
+   https://github.com/Caged1994/Better-Stats
    ```
 5. Click Install, then reload the page
 

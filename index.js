@@ -332,9 +332,9 @@ async function addExtensionSettings() {
             .catch((e) => console.warn("[Dooms Tracker] What's New failed:", e));
     });
     $('#dooms-github-star-btn').on('click', function () {
-        window.open('https://github.com/Caged1994/Dooms-Enhancement-Suite', '_blank', 'noopener,noreferrer');
+        window.open('https://github.com/Caged1994/Better-Stats', '_blank', 'noopener,noreferrer');
     });
-    fetch('https://api.github.com/repos/Caged1994/Dooms-Enhancement-Suite', { headers: { 'Accept': 'application/vnd.github+json' } })
+    fetch('https://api.github.com/repos/Caged1994/Better-Stats', { headers: { 'Accept': 'application/vnd.github+json' } })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
             if (data && typeof data.stargazers_count === 'number') {
@@ -512,7 +512,7 @@ function populateUpdateBranchDropdownOnce() {
                     }
                 } catch (e) { /* keep fallback */ }
             }
-            if (!repoSlug) repoSlug = 'Caged1994/Dooms-Enhancement-Suite';
+            if (!repoSlug) repoSlug = 'Caged1994/Better-Stats';
             try {
                 const ghResp = await fetch(`https://api.github.com/repos/${repoSlug}/branches?per_page=100`, {
                     headers: { 'Accept': 'application/vnd.github+json' },
