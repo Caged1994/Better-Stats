@@ -76,6 +76,9 @@ const sheet = S.getStatSheet('Elena');
 check('every character starts with 6 attributes + 6 states', sheet.length === 12);
 check('states are AI-updated by default, attributes are not',
     sheet.filter(s => s.ai).every(s => s.kind === 'state') && sheet.filter(s => s.kind === 'state').every(s => s.ai));
+check('attributes default to an ordinary person (10)', sheet.find(s => s.id === 'str').base === 10);
+check('a new NPC is waiting for generation', S.isStatGenerationPending('Elena') === true);
+check('the persona never is', S.isStatGenerationPending('Mastera', true) === false);
 check('persona and present NPC are the stat characters',
     JSON.stringify(S.getStatCharacters()) === JSON.stringify([{ name: 'Mastera', isUser: true }, { name: 'Elena', isUser: false }]));
 
@@ -107,6 +110,8 @@ const instr = pb.generateTrackerInstructions(false, false);
 check('tracker instructions ask for "stats"', instr.includes('"stats"') && instr.includes('"Elena"') && instr.includes('"Mastera"'));
 check('fixed stats are read-only context', /Fixed stats/.test(instr) && /Strength 70/.test(instr));
 check('custom stat is explained to the AI', instr.includes('Sanity (Mastera only)'));
+check('the attribute scale is explained', instr.includes('10 = ordinary person') && instr.includes('20 = human peak'));
+check('a new NPC is asked to be generated', /NEW: Elena has no stats yet/.test(instr) && /"Strength": "X"/.test(instr));
 extensionSettings.customTrackerPrompt = 'MY OWN PROMPT';
 check('stats survive a custom tracker prompt', pb.generateTrackerInstructions(false, false).includes('"stats"'));
 extensionSettings.customTrackerPrompt = '';
@@ -119,23 +124,38 @@ extensionSettings.showCharacterThoughts = true;
 check('separate-mode context lists the stats', pb.generateContextualSummary().includes('Character stats:'));
 
 // ── 5. Parse + apply an AI reply ──
-const reply = 'Hi\n```json\n{"infoBox":{"location":{"value":"Hill"}},"characters":[{"name":"Elena"}],"stats":{"Elena":{"Satiety":55,"Strength":1},"Mastera":{"Health":"60","Sanity":90}}}\n```\nStory...';
+// First reply: Elena's sheet is generated, Mastera's states are updated.
+const gen = {"Strength":8,"Dexterity":15,"Constitution":9,"Intelligence":17,"Wisdom":14,"Charisma":12,"Health":70,"Satiety":60,"Energy":80,"Hygiene":90,"Morale":65,"Mana":40};
+const reply = 'Hi\n```json\n{"infoBox":{"location":{"value":"Hill"}},"characters":[{"name":"Elena"}],"stats":{"Elena":' + JSON.stringify(gen) + ',"Mastera":{"Health":"60","Sanity":90}}}\n```\nStory...';
 const parsed = parseResponse(reply);
 check('parser extracts the stats key', !!parsed.stats && !!parsed.infoBox && !parsed.parsingFailed);
 check('a stats-only reply is not a parse failure', !parseResponse('```json\n{"stats":{"Elena":{"Energy":5}}}\n```').parsingFailed);
 chat.push({ is_user: true, mes: 'go' }, { is_user: false, mes: reply });
 const changed = S.applyAIStatUpdates(parsed.stats, chat.length - 1);
-check('AI changes applied', changed === 3, `changed=${changed}`);
-check('...to AI-editable stats', S.getCurrentStatValues('Elena').satiety === 55 && S.getCurrentStatValues('Mastera', true).health === 60);
-check('...but never to locked ones', S.getCurrentStatValues('Elena').str === 50);
-check('undo recorded for the reply', chat_metadata.dooms_tracker?.statsUndo?.messageIndex === 1);
+check('AI update + generation applied', changed === 14, `changed=${changed}`);
+check('generated values become the NPC\'s starting values', S.getStatSheet('Elena').find(s => s.id === 'int').base === 17 && S.getStatSheet('Elena').find(s => s.id === 'health').base === 70);
+check('...and current values', S.getCurrentStatValues('Elena').str === 8);
+check('...and the NPC is no longer pending', S.isStatGenerationPending('Elena') === false);
+check('persona states updated', S.getCurrentStatValues('Mastera', true).health === 60);
+check('generation is not part of the swipe undo', !(chat_metadata.dooms_tracker?.statsUndo?.changes || []).some(c => c.key === 'npc:Elena'));
+// Second reply: normal tracking — locked attributes stay put.
+chat.push({ is_user: true, mes: 'eat' }, { is_user: false, mes: 'ok' });
+S.applyAIStatUpdates({ Elena: { Satiety: 95, Strength: 30 } }, chat.length - 1);
+check('AI-editable stats change', S.getCurrentStatValues('Elena').satiety === 95);
+check('...locked ones never do', S.getCurrentStatValues('Elena').str === 8);
+check('undo recorded for the reply', chat_metadata.dooms_tracker?.statsUndo?.messageIndex === 3);
+// A thin reply does not count as a generation.
+S.requestStatGeneration('Elena');
+check('regeneration can be requested', S.isStatGenerationPending('Elena'));
+S.applyAIStatUpdates({ Elena: { Strength: 3 } }, chat.length - 1);
+check('...and a reply with too few values leaves it pending', S.isStatGenerationPending('Elena') && S.getStatSheet('Elena').find(s => s.id === 'str').base === 8);
 
 // ── 6. Swipe undo keeps manual edits ──
 S.setCurrentStatValue('Mastera', true, 'health', 75); // user edits after the reply
-const reverted = S.revertAIStatsForReplacedMessage(1);
-check('swipe rolls back the AI\'s changes', S.getCurrentStatValues('Elena').satiety === 80 && S.getCurrentStatValues('Mastera', true)[sanity.id] === 100);
-check('...but keeps a value the user edited since', S.getCurrentStatValues('Mastera', true).health === 75 && reverted === 2);
-check('undo is consumed once', S.revertAIStatsForReplacedMessage(1) === 0);
+const reverted = S.revertAIStatsForReplacedMessage(3);
+check('swipe rolls back the AI\'s changes', S.getCurrentStatValues('Elena').satiety === 60, `satiety=${S.getCurrentStatValues('Elena').satiety}`);
+check('...but keeps a value the user edited since', S.getCurrentStatValues('Mastera', true).health === 75 && reverted === 1);
+check('undo is consumed once', S.revertAIStatsForReplacedMessage(3) === 0);
 
 // ── 7. Deleting a custom stat / character cleans up ──
 const trimmed = S.getStatSheet('Mastera', true).filter(s => s.id !== sanity.id);

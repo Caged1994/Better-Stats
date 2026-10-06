@@ -8053,3 +8053,28 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
     #character-workshop-popup .cw-stat-desc { display: none; }
     #character-workshop-popup .cw-stat-base-input { width: 3.6em; }
 }
+
+#character-workshop-popup .cw-stats-gen {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0.8rem;
+    padding: 8px 10px;
+    font-size: var(--modal-font-small, 0.8rem);
+    color: rgba(234, 234, 234, 0.75);
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+}
+
+#character-workshop-popup .cw-stats-gen span { flex: 1; line-height: 1.4; }
+
+#character-workshop-popup .cw-stats-gen .rpg-btn { flex: 0 0 auto; }
+
+#character-workshop-popup .cw-stats-gen.is-pending {
+    color: var(--rpg-text, #eaeaea);
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--cw-accent, #e94560) 55%, transparent);
+    background: color-mix(in srgb, var(--cw-accent, #e94560) 10%, transparent);
+}
+
+#character-workshop-popup .cw-stats-gen.is-pending i { color: var(--cw-accent, var(--rpg-highlight, #e94560)); }

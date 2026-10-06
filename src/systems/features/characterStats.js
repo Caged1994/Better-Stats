@@ -12,6 +12,9 @@
  *   - Current values — one set per campaign ("_base" when none is active):
  *       extensionSettings.characterStatValues[campaignKey]["npc:Name"][statId]
  *     A value that was never set reads as the base value.
+ *   - NPCs start without values: the first reply they appear in asks the AI
+ *     to generate their whole sheet to fit who they are (sheet.pending, or no
+ *     sheet at all). The persona is always set by hand.
  *   - Undo for the last AI update, so a swipe/regenerate starts again from
  *     the values the replaced reply saw:
  *       chat_metadata.dooms_tracker.statsUndo
@@ -113,17 +116,38 @@ export function hasSavedStatSheet(name, isUser = false) {
 }
 
 /**
+ * True for an NPC whose values the AI still has to generate: nothing saved
+ * yet, or the user asked for a regeneration. Never true for the persona.
+ */
+export function isStatGenerationPending(name, isUser = false) {
+    if (isUser || !name) return false;
+    const store = sheetStore(false);
+    const key = findKey(store, name);
+    if (key === undefined) return true;
+    return store[key]?.pending === true;
+}
+
+/**
+ * Asks for the NPC's values to be generated again by the AI the next time
+ * they are in a scene. Keeps custom stats and AI ticks.
+ */
+export function requestStatGeneration(name, stats = null) {
+    if (!name) return;
+    saveStatSheet(name, false, stats || getStatSheet(name, false), { pending: true });
+}
+
+/**
  * Saves a character's stat list (definitions, base values, ai flags) and
  * drops current values of custom stats that no longer exist, in every
  * campaign. Does not persist by itself when `persist` is false (the Workshop
  * saves once at the end of its commit).
  */
-export function saveStatSheet(name, isUser, stats, { persist = true } = {}) {
+export function saveStatSheet(name, isUser, stats, { persist = true, pending = false } = {}) {
     if (!name) return;
     const store = sheetStore(isUser, true);
     const existing = findKey(store, name);
     if (existing !== undefined && existing !== name) delete store[existing];
-    store[name] = serializeSheet(stats);
+    store[name] = serializeSheet(stats, { pending: pending && !isUser });
 
     const ids = new Set((stats || []).map(s => s.id));
     const key = statKey(name, isUser);
@@ -322,6 +346,7 @@ export function buildStatsPromptForGeneration({ compact = true, standalone = fal
             isUser,
             stats,
             current: getCurrentStatValues(name, isUser, stats),
+            generate: isStatGenerationPending(name, isUser),
         };
     });
     return buildStatsPrompt(entries, { compact, standalone });
@@ -333,7 +358,7 @@ export function buildStatsPromptForGeneration({ compact = true, standalone = fal
  */
 export function buildStatsContextSummary() {
     if (!isCharacterStatsEnabled()) return '';
-    const lines = getStatCharacters().map(({ name, isUser }) => {
+    const lines = getStatCharacters().filter(c => !isStatGenerationPending(c.name, c.isUser)).map(({ name, isUser }) => {
         const stats = getStatSheet(name, isUser);
         const cur = getCurrentStatValues(name, isUser, stats);
         const states = stats.filter(s => s.kind === 'state').map(s => `${s.name} ${cur[s.id]}%`);
@@ -361,7 +386,11 @@ function buildTargets() {
             const aliases = extensionSettings.characterAliases?.[name];
             if (Array.isArray(aliases)) names.push(...aliases.filter(a => typeof a === 'string'));
         }
-        targets.push({ key, name, isUser, names, stats, current: getCurrentStatValues(name, isUser, stats) });
+        targets.push({
+            key, name, isUser, names, stats,
+            current: getCurrentStatValues(name, isUser, stats),
+            generate: isStatGenerationPending(name, isUser),
+        });
     };
     for (const c of getStatCharacters({ source: 'displayed' })) add(c.name, c.isUser);
     for (const c of getStatCharacters({ source: 'committed' })) add(c.name, c.isUser);
@@ -380,8 +409,17 @@ function buildTargets() {
  */
 export function applyAIStatUpdates(rawStats, messageIndex) {
     if (!isCharacterStatsEnabled() || rawStats === null || rawStats === undefined) return 0;
-    const changes = computeAIChanges(buildTargets(), rawStats);
-    if (!changes.length) return 0;
+    const targets = buildTargets();
+    const all = computeAIChanges(targets, rawStats);
+    const generatedCount = applyGeneratedSheets(targets, all.filter(c => c.generated));
+    const changes = all.filter(c => !c.generated);
+    if (!changes.length) {
+        if (generatedCount) {
+            saveSettings();
+            notifyStatsChanged({ source: 'generated' });
+        }
+        return generatedCount;
+    }
     for (const c of changes) writeCurrentByKey(c.key, c.statId, c.after);
     const campaign = currentCampaignKey();
     try {
@@ -398,7 +436,41 @@ export function applyAIStatUpdates(rawStats, messageIndex) {
     } catch (e) { /* undo is best-effort */ }
     saveSettings();
     notifyStatsChanged({ source: 'ai' });
-    return changes.length;
+    return changes.length + generatedCount;
+}
+
+/**
+ * Stores the values the AI generated for new NPCs: they become the
+ * character's starting values AND current values, and the sheet stops being
+ * pending. A reply that gave too little (fewer than half the stats) leaves
+ * the character pending so the next reply tries again.
+ * @returns {number} values stored
+ */
+function applyGeneratedSheets(targets, generated) {
+    let count = 0;
+    const byKey = new Map();
+    for (const c of generated) {
+        if (!byKey.has(c.key)) byKey.set(c.key, []);
+        byKey.get(c.key).push(c);
+    }
+    for (const [key, list] of byKey) {
+        const target = targets.find(t => t.key === key);
+        if (!target || list.length < Math.ceil(target.stats.length / 2)) continue;
+        const stats = target.stats.map(s => ({ ...s }));
+        for (const c of list) {
+            const stat = stats.find(s => s.id === c.statId);
+            if (stat) stat.base = c.after;
+        }
+        saveStatSheet(target.name, false, stats, { persist: false, pending: false });
+        // Fresh start in this campaign: current = the generated values.
+        const bucket = valueBucket(currentCampaignKey());
+        if (bucket) {
+            const k = findKey(bucket, key);
+            if (k !== undefined) delete bucket[k];
+        }
+        count += list.length;
+    }
+    return count;
 }
 
 /**

@@ -16,7 +16,7 @@ import { saveSettings } from '../../core/persistence.js';
 import { ensureCss } from '../../core/cssLoader.js';
 import { extensionFolderPath } from '../../core/config.js';
 import { escapeHtml } from '../../utils/html.js';
-import { ringColor } from '../../utils/statsModel.js';
+import { ringColor, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
 import {
     STATS_CHANGED_EVENT,
     getStatSheet,
@@ -24,6 +24,7 @@ import {
     setCurrentStatValue,
     resetCurrentStatValues,
     currentCampaignKey,
+    isStatGenerationPending,
 } from '../features/characterStats.js';
 import { getCharacterList, resolveActiveUserName, resolvePortrait } from './portraitBar.js';
 
@@ -114,8 +115,10 @@ function initials(name) {
 
 function avatarHtml(name, cls) {
     const src = portraitFor(name);
+    // A portrait that fails to load falls back to the initials.
+    const fallback = "const s=this.ownerDocument.createElement('span');s.className=this.className+' is-initials';s.textContent=this.dataset.initials;this.replaceWith(s);";
     return src
-        ? `<img class="${cls}" src="${escapeHtml(src)}" alt="" draggable="false">`
+        ? `<img class="${cls}" src="${escapeHtml(src)}" alt="" draggable="false" data-initials="${escapeHtml(initials(name))}" onerror="${escapeHtml(fallback)}">`
         : `<span class="${cls} is-initials">${escapeHtml(initials(name))}</span>`;
 }
 
@@ -146,16 +149,27 @@ function ringHtml(stat, value) {
         </div>`;
 }
 
+/** Where an attribute sits on the human scale. */
+function attrTier(value) {
+    if (value > HUMAN_PEAK) return { cls: ' is-super', label: 'superhuman' };
+    if (value === HUMAN_PEAK) return { cls: ' is-peak', label: 'human peak' };
+    if (value < HUMAN_AVERAGE) return { cls: ' is-weak', label: 'below average' };
+    return { cls: '', label: value === HUMAN_AVERAGE ? 'average' : 'above average' };
+}
+
 function attrHtml(stat, value) {
-    const tip = stat.description ? `${stat.name}: ${stat.description}` : stat.name;
+    const tier = attrTier(value);
+    const tip = `${stat.name} ${value} (${tier.label})${stat.description ? ` — ${stat.description}` : ''}`;
+    // The bar fills at the human peak; superhuman values glow instead.
+    const width = Math.max(3, Math.min(100, (value / HUMAN_PEAK) * 100));
     return `
-        <div class="dsp-attr" data-stat="${escapeHtml(stat.id)}" title="${escapeHtml(tip)}">
+        <div class="dsp-attr${tier.cls}" data-stat="${escapeHtml(stat.id)}" title="${escapeHtml(tip)}">
             <div class="dsp-attr-head">
                 <span class="dsp-attr-abbr">${escapeHtml(stat.abbr || stat.name)}</span>
                 ${aiBadge(stat)}
             </div>
             <button type="button" class="dsp-value dsp-attr-value" data-stat="${escapeHtml(stat.id)}" title="Click to edit">${value}</button>
-            <div class="dsp-attr-bar"><span style="width:${Math.max(1, Math.min(100, value))}%"></span></div>
+            <div class="dsp-attr-bar"><span style="width:${width.toFixed(1)}%"></span></div>
             ${stat.abbr ? `<span class="dsp-attr-name">${escapeHtml(stat.name)}</span>` : ''}
         </div>`;
 }
@@ -211,12 +225,15 @@ function buildHtml({ popout }) {
                     <i class="fa-solid fa-rotate-left"></i> Reset
                 </button>
             </section>
+            ${isStatGenerationPending(selected.name, selected.isUser) ? `
+            <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
+                The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
             <section class="dsp-section">
                 <h3 class="dsp-section-title">States</h3>
                 <div class="dsp-rings">${states.map(s => ringHtml(s, cur[s.id])).join('')}</div>
             </section>
             <section class="dsp-section">
-                <h3 class="dsp-section-title">Attributes</h3>
+                <h3 class="dsp-section-title">Attributes <span class="dsp-scale">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak</span></h3>
                 <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id])).join('')}</div>
             </section>
             <p class="dsp-foot">Click a value to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do. Stats, starting values and AI permissions are set in the Workshop.</p>

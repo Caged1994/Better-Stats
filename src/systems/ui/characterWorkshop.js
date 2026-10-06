@@ -75,8 +75,8 @@ import { escapeHtml } from '../../utils/html.js';
 import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
 // Character Stats: the sheet (definitions, base values, AI flags) is shared by
 // every campaign, so it travels across version switches like colour/aliases.
-import { getStatSheet, saveStatSheet, deleteStatSheet } from '../features/characterStats.js';
-import { createCustomStat, clampStatValue } from '../../utils/statsModel.js';
+import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending } from '../features/characterStats.js';
+import { createCustomStat, clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -504,7 +504,7 @@ function loadVersion(name, isUser, versionId, { fullReset = false, carry = null 
     if (carry) {
         if (carry.dirty?.color) { draft.color = carry.color; draft.dirty.color = true; }
         if (carry.dirty?.aliases) { draft.aliases = [...(carry.aliases || [])]; draft.dirty.aliases = true; }
-        if (carry.dirty?.stats) { draft.stats = cloneStats(carry.stats); draft.dirty.stats = true; }
+        if (carry.dirty?.stats) { draft.stats = cloneStats(carry.stats); draft.statsPending = !!carry.statsPending; draft.dirty.stats = true; }
     }
     // Stamp the modal with a mode attribute so CSS can flip NPC-only vs
     // user-only sections without a JS class-toggle on every section.
@@ -540,6 +540,7 @@ function versionIndependentCarry() {
         color: draft.color,
         aliases: draft.aliases,
         stats: draft.stats,
+        statsPending: draft.statsPending,
         dirty: { color: draft.dirty.color, aliases: draft.dirty.aliases, stats: draft.dirty.stats },
     };
 }
@@ -582,9 +583,21 @@ function renderStats() {
     const stats = draft?.stats || [];
     const attrs = stats.filter(s => s.kind === 'attribute');
     const states = stats.filter(s => s.kind === 'state');
+    // NPCs get their values from the AI the first time they are in a scene;
+    // the persona is always set by hand.
+    const genBox = draft?.isUser ? '' : (draft?.statsPending
+        ? `<div class="cw-stats-gen is-pending">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>The AI will generate ${escapeHtml(draft.name)}'s stats to fit who they are, the next time they are in a reply. Edit a starting value below to set them yourself instead.</span>
+            </div>`
+        : `<div class="cw-stats-gen">
+                <span>Want the AI to decide these values again from who ${escapeHtml(draft?.name || 'this character')} is?</span>
+                <button type="button" class="rpg-btn" id="cw-stats-regenerate"><i class="fa-solid fa-wand-magic-sparkles"></i> Regenerate with AI</button>
+            </div>`);
     $host.html(`
+        ${genBox}
         <div class="cw-stats-group">
-            <div class="cw-stats-group-head"><span>Attributes</span><span class="muted">1–100 · read by the AI</span></div>
+            <div class="cw-stats-group-head"><span>Attributes</span><span class="muted">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak · up to 100</span></div>
             ${attrs.map(statRowHtml).join('')}
         </div>
         <div class="cw-stats-group">
@@ -1261,6 +1274,7 @@ function buildDraft(name, isUser = false, versionId = null) {
             // kept on the draft so shared render code can no-op safely.
             aliases: [],
             stats: cloneStats(getStatSheet(name, true)),
+            statsPending: false,
             dirty: { color: false, avatar: false, injection: false, relationship: false, pronouns: false, linkedPersona: false, knives: false, aliases: false, stats: false },
         };
     }
@@ -1287,6 +1301,7 @@ function buildDraft(name, isUser = false, versionId = null) {
         color: activeColors[name] || '',
         aliases: Array.isArray(npcAliases) ? npcAliases.filter(a => typeof a === 'string') : [],
         stats: cloneStats(getStatSheet(name, false)),
+        statsPending: isStatGenerationPending(name, false),
         dirty: { color: false, avatar: false, injection: false, relationship: false, knives: false, aliases: false, appearance: false, stats: false },
     };
     if (live) {
@@ -1900,6 +1915,14 @@ function bindStaticListeners() {
         if (v === stat.base) return;
         stat.base = v;
         draft.dirty.stats = true;
+        // Choosing a value by hand means the user is setting the sheet.
+        if (draft.statsPending) { draft.statsPending = false; renderStats(); }
+    });
+    $modal.on('click.cw', '#cw-stats-regenerate', function () {
+        if (!draft || draft.isUser) return;
+        draft.statsPending = true;
+        draft.dirty.stats = true;
+        renderStats();
     });
     $modal.on('change.cw', '#cw-stats-editor .cw-stat-ai-input', function () {
         const stat = findDraftStat(this);
@@ -2658,7 +2681,7 @@ function commitDraft() {
     // Stats are shared by every version and campaign — saved the same way
     // whatever version is on the stage, for NPCs and personas alike.
     if (draft.dirty.stats) {
-        saveStatSheet(name, draft.isUser, draft.stats, { persist: false });
+        saveStatSheet(name, draft.isUser, draft.stats, { persist: false, pending: !!draft.statsPending });
         changed = true;
     }
 

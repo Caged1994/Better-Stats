@@ -6,8 +6,9 @@
  * injection live in src/systems/features/characterStats.js.
  *
  * Two kinds of stat:
- *   - attribute: the classic D&D six plus any the user adds, 1–100. Fixed by
- *     default: the AI only reads them, it does not change them.
+ *   - attribute: the classic D&D six plus any the user adds, 1–100 on a human
+ *     scale: 10 is an ordinary person, below 10 a weakness, 20 the human peak,
+ *     above 20 superhuman. Fixed by default: the AI only reads them.
  *   - state:     Health, Satiety, Energy, Hygiene, Morale, Mana plus any the
  *     user adds, a 0–100 percentage drawn as a ring. The AI updates them by
  *     default.
@@ -17,15 +18,20 @@
  *
  * Stored sheet shape (extensionSettings.characterStatSheets[ns][name]):
  *   { base: { [statId]: number }, ai: { [statId]: boolean },
- *     custom: [{ id, name, description, kind, color }] }
+ *     custom: [{ id, name, description, kind, color }],
+ *     pending?: true }   // NPC waiting for the AI to generate its values
  * Missing entries fall back to the defaults below, so new built-ins added in
  * a later release show up on existing sheets automatically.
  */
 
 export const STAT_KINDS = {
-    attribute: { min: 1, max: 100, defaultBase: 50, defaultAi: false },
+    attribute: { min: 1, max: 100, defaultBase: 10, defaultAi: false },
     state: { min: 0, max: 100, defaultBase: 100, defaultAi: true },
 };
+
+/** Attribute scale: an ordinary person, and the best a human can be. */
+export const HUMAN_AVERAGE = 10;
+export const HUMAN_PEAK = 20;
 
 export const BUILTIN_ATTRIBUTES = [
     { id: 'str', name: 'Strength', abbr: 'STR', description: 'Raw physical power: lifting, pushing, melee force, athletics.' },
@@ -144,8 +150,9 @@ export function resolveSheet(stored) {
  * Inverse of resolveSheet: the stored shape for a resolved stat list.
  * @param {Array<object>} stats
  */
-export function serializeSheet(stats) {
+export function serializeSheet(stats, { pending = false } = {}) {
     const out = { base: {}, ai: {}, custom: [] };
+    if (pending) out.pending = true;
     for (const s of stats || []) {
         if (!s || !s.id) continue;
         const v = clampStatValue(s, s.base);
@@ -279,13 +286,18 @@ export function computeAIChanges(targets, raw) {
         if (!target) continue;
         for (const [label, rawValue] of Object.entries(entry.values)) {
             const stat = findStat(target.stats, label);
-            if (!stat || !stat.ai) continue;
+            // A character being generated takes every stat, locked or not.
+            if (!stat || (!stat.ai && !target.generate)) continue;
             const dedupe = `${target.key}\u0000${stat.id}`;
             if (done.has(dedupe)) continue;
             const value = clampStatValue(stat, typeof rawValue === 'object' && rawValue ? rawValue.value : rawValue);
             if (value === null) continue;
             done.add(dedupe);
             const before = target.current?.[stat.id];
+            if (target.generate) {
+                changes.push({ key: target.key, statId: stat.id, before, after: value, generated: true });
+                continue;
+            }
             if (before === value) continue;
             changes.push({ key: target.key, statId: stat.id, before, after: value });
         }
@@ -319,46 +331,69 @@ export function changesToRevert(changes, readCurrent) {
     return (changes || []).filter(c => readCurrent(c.key, c.statId) === c.after);
 }
 
+/** One line telling the AI how the attribute numbers read. */
+export function attributeScaleLine(compact = true) {
+    return compact
+        ? `Attribute scale: ${HUMAN_AVERAGE} = ordinary person, below ${HUMAN_AVERAGE} = a weakness, ${HUMAN_PEAK} = human peak, above ${HUMAN_PEAK} = superhuman (max 100).`
+        : `Attributes use a human scale: ${HUMAN_AVERAGE} is an ordinary person, anything below ${HUMAN_AVERAGE} is a weakness or flaw, ${HUMAN_PEAK} is the peak a human can reach, and values above ${HUMAN_PEAK} (up to 100) are superhuman.`;
+}
+
 /**
  * Builds the prompt section that hands the AI its stats.
- * @param {Array<{displayName: string, isUser: boolean, stats: object[], current: object}>} entries
- * @param {{compact?: boolean, standalone?: boolean, userName?: string}} [options]
+ * Entries with `generate: true` are NPCs that have no stats yet: the AI is
+ * asked to create every value for them, fitting who they are.
+ * @param {Array<{displayName: string, isUser: boolean, stats: object[], current: object, generate?: boolean}>} entries
+ * @param {{compact?: boolean, standalone?: boolean}} [options]
  * @returns {string} '' when there is nothing to send
  */
 export function buildStatsPrompt(entries, { compact = true, standalone = false } = {}) {
     const list = (entries || []).filter(e => e && e.displayName && Array.isArray(e.stats) && e.stats.length);
     if (!list.length) return '';
 
-    const editable = {};
+    const payload = {};
     const fixedLines = [];
     const describe = new Map(); // description key -> line
+    const toGenerate = [];
+    let hasAttributes = false;
+    const addDescription = (e, s) => {
+        const descKey = s.builtin ? s.id : `${e.displayName}\u0000${s.id}`;
+        // Compact prompts trust the AI with the well-known built-ins and only
+        // explain the stats the user invented.
+        if (describe.has(descKey) || !s.description || (compact && s.builtin)) return;
+        const range = s.kind === 'state' ? '0-100%' : '1-100';
+        const owner = s.builtin ? '' : ` (${e.displayName} only)`;
+        describe.set(descKey, `- ${s.name}${owner}, ${range}: ${s.description}`);
+    };
     for (const e of list) {
-        const ed = {};
+        const values = {};
         const fixed = [];
+        if (e.generate) {
+            toGenerate.push(e.displayName);
+            for (const s of e.stats) {
+                values[s.name] = 'X';
+                if (s.kind === 'attribute') hasAttributes = true;
+                addDescription(e, s);
+            }
+            payload[e.displayName] = values;
+            continue;
+        }
         for (const s of e.stats) {
             const v = e.current?.[s.id] ?? s.base;
+            if (s.kind === 'attribute') hasAttributes = true;
             if (s.ai) {
-                ed[s.name] = v;
-                const descKey = s.builtin ? s.id : `${e.displayName}\u0000${s.id}`;
-                // Compact prompts trust the AI with the well-known built-ins
-                // and only explain the stats the user invented.
-                if (!describe.has(descKey) && s.description && !(compact && s.builtin)) {
-                    const range = s.kind === 'state' ? '0-100%' : '1-100';
-                    const owner = s.builtin ? '' : ` (${e.displayName} only)`;
-                    describe.set(descKey, `- ${s.name}${owner}, ${range}: ${s.description}`);
-                }
+                values[s.name] = v;
+                addDescription(e, s);
             } else {
                 fixed.push(`${s.name} ${v}${s.kind === 'state' ? '%' : ''}`);
             }
         }
-        if (Object.keys(ed).length) editable[e.displayName] = ed;
+        if (Object.keys(values).length) payload[e.displayName] = values;
         if (fixed.length) fixedLines.push(`- ${e.displayName}${e.isUser ? ' (player character)' : ''}: ${fixed.join(', ')}`);
     }
 
-    const hasEditable = Object.keys(editable).length > 0;
     let out = '';
-    if (hasEditable) {
-        const json = JSON.stringify({ stats: editable }, null, 2);
+    if (Object.keys(payload).length) {
+        const json = JSON.stringify({ stats: payload }, null, 2);
         const body = json.slice(json.indexOf('"stats"'), json.lastIndexOf('}')).trimEnd();
         if (standalone) {
             out += compact
@@ -374,6 +409,12 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
         out += compact
             ? 'Return every character and stat listed, as whole numbers (states are percentages). Change them realistically per what happens; keep them unchanged when nothing affects them.'
             : 'Return every character and stat listed above as whole numbers within their range (states are percentages from 0 to 100). Raise, lower or keep each value realistically based on what happens in the scene, the passage of time and logical consequences; keep it unchanged when nothing affects it. Do not add stats or characters that are not listed.';
+        if (toGenerate.length) {
+            out += compact
+                ? `\nNEW: ${toGenerate.join(', ')} ${toGenerate.length === 1 ? 'has' : 'have'} no stats yet — replace every X with values that fit who they are (role, build, training, condition right now). This happens once.`
+                : `\nNEW CHARACTERS: ${toGenerate.join(', ')} ${toGenerate.length === 1 ? 'has' : 'have'} no stats yet. Replace every X with a value that fits who they are — their role, build, training, age and current condition (a veteran soldier is strong and tough, a scholar is clever but frail, a wounded guard has low Health). This is done only once; afterwards their values are tracked like everyone else's.`;
+        }
+        if (hasAttributes) out += '\n' + attributeScaleLine(compact);
         if (describe.size) out += '\nWhat they mean:\n' + [...describe.values()].join('\n');
     }
     if (fixedLines.length) {
@@ -382,6 +423,7 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
             ? 'Fixed stats (read-only, never output them; let them shape what each character can do):\n'
             : 'Fixed stats — read-only. Do NOT output them, but let them shape what each character is capable of and how they act:\n';
         out += fixedLines.join('\n');
+        if (hasAttributes && !Object.keys(payload).length) out += '\n' + attributeScaleLine(compact);
     }
     return out.trim();
 }
