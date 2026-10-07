@@ -22,6 +22,7 @@ import { mergeVariantIntoCanonicalProfiles } from '../lorebook/campaignProfiles.
 import { mergeMemories } from './characterMemories.js';
 import { mergeEquipment } from './characterEquipment.js';
 import { mergeConditions } from './characterConditions.js';
+import { mergeAbilities } from './characterAbilities.js';
 
 /**
  * Builds a lowercase alias → canonical-name lookup from settings.
@@ -415,6 +416,7 @@ export async function adoptVariantAsAlias(canonical, variant) {
     try { mergeMemories(canonical, variant); } catch (e) {}
     try { mergeEquipment(canonical, variant); } catch (e) {}
     try { mergeConditions(canonical, variant); } catch (e) {}
+    try { mergeAbilities(canonical, variant); } catch (e) {}
     for (const store of ['characterColors', 'npcAvatars', 'npcAvatarsFullRes', 'npcAvatarHistory',
         'characterInjection', 'characterRelationships', 'characterKnives', 'heroPositions', 'characterAppearance',
         'generatedPortraits']) {

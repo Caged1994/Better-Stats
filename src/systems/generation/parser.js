@@ -113,7 +113,9 @@ export function parseResponse(responseText) {
         // Character Equipment (characterEquipment.js): the "equipment" key.
         equipment: null,
         // Character Conditions (characterConditions.js): the "conditions" key.
-        conditions: null
+        conditions: null,
+        // Spells & Abilities (characterAbilities.js): the "abilities" key.
+        abilities: null
     };
     // DEBUG: Log full response for troubleshooting
     debugLog('[RPG Parser] ==================== PARSING AI RESPONSE ====================');
@@ -177,7 +179,9 @@ export function parseResponse(responseText) {
             const parsed = repairJSON(extractedObjects[0]);
             // Models sometimes call the equipment "inventory".
             if (parsed && !parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
-            if (parsed && (parsed.quests || parsed.infoBox || parsed.characters || parsed.stats || parsed.memories || parsed.equipment || parsed.conditions)) {
+            // ...and the abilities "skills" or "spells".
+            if (parsed && !parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
+            if (parsed && (parsed.quests || parsed.infoBox || parsed.characters || parsed.stats || parsed.memories || parsed.equipment || parsed.conditions || parsed.abilities)) {
                 if (parsed.quests) {
                     result.quests = JSON.stringify(parsed.quests);
                 }
@@ -199,7 +203,10 @@ export function parseResponse(responseText) {
                 if (parsed.conditions && typeof parsed.conditions === 'object') {
                     result.conditions = JSON.stringify(parsed.conditions);
                 }
-                if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions) {
+                if (parsed.abilities && typeof parsed.abilities === 'object') {
+                    result.abilities = JSON.stringify(parsed.abilities);
+                }
+                if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
                     debugLog('[RPG Parser] Returning unified JSON parse results');
                     return result;
                 }
@@ -225,7 +232,11 @@ export function parseResponse(responseText) {
                 if (parsed.conditions && typeof parsed.conditions === 'object' && !result.conditions) {
                     result.conditions = JSON.stringify(parsed.conditions);
                 }
-                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions'].includes(k))) continue;
+                if (!parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
+                if (parsed.abilities && typeof parsed.abilities === 'object' && !result.abilities) {
+                    result.abilities = JSON.stringify(parsed.abilities);
+                }
+                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells'].includes(k))) continue;
                 // Check if object is wrapped (e.g., {"quests": {...}})
                 // Unwrap single-key objects that match our tracker types
                 let unwrapped = parsed;
@@ -252,7 +263,7 @@ export function parseResponse(responseText) {
                 console.error('[RPG Parser] ✗ Failed to parse raw JSON object', idx + 1);
             }
         }
-        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions) {
+        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
             debugLog('[RPG Parser] Returning raw JSON parse results');
             return result;
         } else {
@@ -285,7 +296,11 @@ export function parseResponse(responseText) {
                 if (parsed.conditions && typeof parsed.conditions === 'object' && !result.conditions) {
                     result.conditions = JSON.stringify(parsed.conditions);
                 }
-                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions'].includes(k))) continue;
+                if (!parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
+                if (parsed.abilities && typeof parsed.abilities === 'object' && !result.abilities) {
+                    result.abilities = JSON.stringify(parsed.abilities);
+                }
+                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells'].includes(k))) continue;
                 // Detect tracker type by checking for top-level fields
                 if (parsed.main !== undefined || parsed.optional !== undefined) {
                     result.quests = jsonContent;
@@ -306,7 +321,7 @@ export function parseResponse(responseText) {
         }
         // If we found at least one valid JSON block, return the result
         // Mixed formats (some JSON, some text) will still work
-        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions) {
+        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
             debugLog('[RPG Parser] Returning JSON parse results');
             return result;
         } else {
@@ -422,7 +437,7 @@ export function parseResponse(responseText) {
     debugLog('[RPG Parser] Found Characters:', !!result.characterThoughts);
     debugLog('[RPG Parser] =======================================================');
     // Check if we found at least one section - if not, mark as parsing failure
-    if (!result.quests && !result.infoBox && !result.characterThoughts && !result.stats && !result.memories && !result.equipment && !result.conditions) {
+    if (!result.quests && !result.infoBox && !result.characterThoughts && !result.stats && !result.memories && !result.equipment && !result.conditions && !result.abilities) {
         result.parsingFailed = true;
         console.error('[RPG Parser] ❌ No tracker data found in response - parsing failed');
     }

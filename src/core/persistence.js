@@ -589,6 +589,8 @@ export function saveChatData({ immediate = false } = {}) {
         equipmentUndo: chat_metadata.dooms_tracker?.equipmentUndo || null,
         // Undo for the condition changes of the last reply (characterConditions.js).
         conditionsUndo: chat_metadata.dooms_tracker?.conditionsUndo || null,
+        // Undo for the spell/ability changes of the last reply (characterAbilities.js).
+        abilitiesUndo: chat_metadata.dooms_tracker?.abilitiesUndo || null,
         timestamp: Date.now()
     };
     // Persist per-chat character tracking data when enabled

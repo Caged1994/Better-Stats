@@ -40,6 +40,7 @@ import { applyAIStatUpdates, revertAIStatsForReplacedMessage } from '../features
 import { applyAIMemories, revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
 import { applyAIEquipment, revertAIEquipmentForReplacedMessage, notifyBlockedRemovals } from '../features/characterEquipment.js';
 import { applyAIConditions, revertAIConditionsForReplacedMessage } from '../features/characterConditions.js';
+import { applyAIAbilities, revertAIAbilitiesForReplacedMessage } from '../features/characterAbilities.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -233,7 +234,15 @@ export async function onMessageReceived(data) {
             // System Log so a missing update can be told apart from a
             // reply that never contained one.
             if (isAwaitingNewMessage) {
-                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, memories: ${parsedData.memories || 'no'}`);
+                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            }
+            // Spells & Abilities: same rule.
+            if (parsedData.abilities && isAwaitingNewMessage) {
+                try {
+                    notifyBlockedRemovals(applyAIAbilities(parsedData.abilities, chat.length - 1));
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Abilities: applying AI update failed', e);
+                }
             }
             // Character Conditions: same rule.
             if (parsedData.conditions && isAwaitingNewMessage) {
@@ -502,6 +511,7 @@ export function onMessageSwiped(messageIndex) {
         try { revertAIMemoriesForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIEquipmentForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIConditionsForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIAbilitiesForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

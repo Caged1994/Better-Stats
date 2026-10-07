@@ -66,6 +66,9 @@ Each character, your persona included, has an Equipment list in the Stats panel 
 ### Conditions and item effects
 Equipment is split into **Equipped** and **Backpack**, items have quantities, and an item can give attribute bonuses while it is equipped (Iron sword: STR +2). Temporary **conditions** (Poisoned, Wounded leg, Drunk…) appear at the top of the Stats panel; the AI starts and ends them, and they can carry effects too. Effects are added on top of the attributes, never written into them: the panel shows **12 +2**, and the bonus disappears by itself when the item is put away or the condition ends.
 
+### Spells & Abilities
+Each character has a list of **Spells** and **Abilities** in the Stats panel, under Equipment. The AI adds what a character learns or is shown using (and fills in what they already know, once); passive abilities can give attribute bonuses that always apply; locked entries can only be removed by you. Every entry in the panel — items, conditions, spells and abilities — can be edited by clicking its name.
+
 ### Character Memories
 Characters (not your own) keep one-line memories of important events — what happened to them, what they learned, what they promised. The AI adds new memories by itself — at most one per reply, only when something memorable happens, never removing old ones —, and you can add, edit, star or delete them in the Workshop's **Memories** tab. **★ Important** memories are always sent to the AI; normal ones are sent while they are among the most recent and then fade, so the prompt stays short. Only the characters in the scene have their memories sent, and memories belong to the active campaign.
 

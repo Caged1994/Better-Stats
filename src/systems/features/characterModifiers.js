@@ -15,6 +15,8 @@ import { clampStatValue } from '../../utils/statsModel.js';
 import { getStatSheet, getCurrentStatValues, setModifierProvider } from './characterStats.js';
 import { getEquipment, isEquipmentEnabled } from './characterEquipment.js';
 import { getConditions, isConditionsEnabled } from './characterConditions.js';
+import { getAbilities, isAbilitiesEnabled } from './characterAbilities.js';
+import { abilityModifierSources } from '../../utils/abilityModel.js';
 
 /**
  * { statId: { total, parts: [{label, value}] } } for the character right now.
@@ -23,6 +25,7 @@ export function getAttributeModifiers(name, isUser = false) {
     const sources = [];
     if (isEquipmentEnabled()) sources.push(...equipmentModifierSources(getEquipment(name, isUser)));
     if (isConditionsEnabled()) sources.push(...conditionModifierSources(getConditions(name, isUser)));
+    if (isAbilitiesEnabled()) sources.push(...abilityModifierSources(getAbilities(name, isUser)));
     return collectModifiers(sources);
 }
 

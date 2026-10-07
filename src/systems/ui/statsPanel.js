@@ -29,7 +29,12 @@ import {
 } from '../features/characterStats.js';
 import { getCharacterList, resolveActiveUserName, resolvePortrait } from './portraitBar.js';
 import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled, needsStartingGear, requestStartingGear, cancelStartingGear, describeEffects } from '../features/characterEquipment.js';
-import { getConditions, addCondition, removeCondition, isConditionsEnabled } from '../features/characterConditions.js';
+import { getConditions, addCondition, updateCondition, removeCondition, isConditionsEnabled } from '../features/characterConditions.js';
+import {
+    getAbilities, addAbility, updateAbility, removeAbility, isAbilitiesEnabled,
+    needsStartingAbilities, requestStartingAbilities, cancelStartingAbilities,
+} from '../features/characterAbilities.js';
+import { ABILITY_EMOJI, DEFAULT_SPELL_ICON, DEFAULT_ABILITY_ICON } from '../../utils/abilityModel.js';
 import { getEffectiveStatValues } from '../features/characterModifiers.js';
 import { ITEM_EMOJI, DEFAULT_ICON, normalizeItem } from '../../utils/equipmentModel.js';
 import { CONDITION_EMOJI, DEFAULT_CONDITION_ICON } from '../../utils/conditionModel.js';
@@ -45,7 +50,8 @@ let listenersBound = false;
 let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
-const FORM_DEFAULTS = { open: false, kind: 'item', icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, error: '' };
+// editId: the entry being edited (null = adding a new one).
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', error: '' };
 const itemForm = { ...FORM_DEFAULTS };
 function resetForm() { Object.assign(itemForm, FORM_DEFAULTS); }
 
@@ -257,6 +263,7 @@ function buildHtml({ popout }) {
             </section>` : ''}
             ${!states.length && !attrs.length ? '<div class="dsp-empty">Every stat is switched off in Settings → Stats.</div>' : ''}
             ${isEquipmentEnabled() ? equipmentHtml() : ''}
+            ${isAbilitiesEnabled() ? abilitiesHtml() : ''}
             <p class="dsp-foot">Click a value to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do. Stats, starting values and AI permissions are set in the Workshop.</p>
         </div>`;
 }
@@ -275,7 +282,7 @@ function itemHtml(raw) {
     return `
         <div class="dsp-item${locked ? ' is-locked' : ''}${item.equipped ? ' is-equipped' : ''}" data-id="${escapeHtml(item.id)}" data-tip="${escapeHtml(tip)}">
             <span class="dsp-item-icon" tabindex="0" aria-label="${escapeHtml(tip)}">${escapeHtml(item.icon || DEFAULT_ICON)}</span>
-            <span class="dsp-item-main">
+            <span class="dsp-item-main dsp-edit-open" title="Click to edit">
                 <span class="dsp-item-name">${escapeHtml(item.name)}</span>
                 ${eff ? `<span class="dsp-item-eff${item.equipped ? '' : ' is-idle'}">${escapeHtml(eff)}</span>` : ''}
             </span>
@@ -284,6 +291,7 @@ function itemHtml(raw) {
                 <span class="dsp-qty-n">${item.qty}</span>
                 <button type="button" class="dsp-qty-btn" data-qty="1" title="One more">+</button>
             </span>
+            <button type="button" class="dsp-item-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
             <button type="button" class="dsp-item-equip" aria-pressed="${item.equipped}"
                 title="${item.equipped ? 'Equipped — click to put it in the backpack' : 'In the backpack — click to equip it'}">
                 <i class="fa-solid ${item.equipped ? 'fa-hand-fist' : 'fa-box-archive'}"></i></button>
@@ -298,27 +306,56 @@ function formHtml(kind) {
     const f = itemForm;
     if (!f.open || f.kind !== kind) return '';
     const isItem = kind === 'item';
-    const emoji = isItem ? ITEM_EMOJI : CONDITION_EMOJI;
+    const isAbility = kind === 'ability';
+    const emoji = isItem ? ITEM_EMOJI : (isAbility ? ABILITY_EMOJI : CONDITION_EMOJI);
+    const iconPh = isItem ? DEFAULT_ICON : (isAbility ? (f.type === 'spell' ? DEFAULT_SPELL_ICON : DEFAULT_ABILITY_ICON) : DEFAULT_CONDITION_ICON);
+    const namePh = isItem ? 'Item name' : (isAbility ? 'Name (e.g. Fireball, Lockpicking)' : 'Condition (e.g. Poisoned)');
+    const effPh = isItem ? 'Effects while equipped, e.g. STR +2, DEX -1 (optional)'
+        : isAbility ? 'Passive effects, always on, e.g. CON +1 (optional)'
+            : 'Effects while it lasts, e.g. DEX -3 (optional)';
     return `
-        <div class="dsp-item-form">
+        <div class="dsp-item-form${f.editId ? ' is-edit' : ''}">
+            ${f.editId ? `<div class="dsp-form-title"><i class="fa-solid fa-pen"></i> Edit</div>` : ''}
             <div class="dsp-item-form-row">
-                <input type="text" class="dsp-item-in-icon" data-field="icon" value="${escapeHtml(f.icon)}" placeholder="${isItem ? DEFAULT_ICON : DEFAULT_CONDITION_ICON}" maxlength="8" aria-label="Icon (emoji)">
-                <input type="text" class="dsp-item-in-name" data-field="name" value="${escapeHtml(f.name)}" placeholder="${isItem ? 'Item name' : 'Condition (e.g. Poisoned)'}" maxlength="40" aria-label="Name">
+                <input type="text" class="dsp-item-in-icon" data-field="icon" value="${escapeHtml(f.icon)}" placeholder="${iconPh}" maxlength="8" aria-label="Icon (emoji)">
+                <input type="text" class="dsp-item-in-name" data-field="name" value="${escapeHtml(f.name)}" placeholder="${namePh}" maxlength="40" aria-label="Name">
                 ${isItem ? `<input type="number" class="dsp-item-in-qty" data-field="qty" value="${escapeHtml(f.qty)}" min="1" max="999" step="1" aria-label="Quantity" title="Quantity">` : ''}
+                ${isAbility ? `<select class="dsp-item-in-type" aria-label="Type">
+                    <option value="spell"${f.type === 'spell' ? ' selected' : ''}>Spell</option>
+                    <option value="ability"${f.type !== 'spell' ? ' selected' : ''}>Ability</option></select>` : ''}
             </div>
             <div class="dsp-emoji-grid" role="listbox" aria-label="Pick an icon">
                 ${emoji.map(e => `<button type="button" class="dsp-emoji${f.icon === e ? ' is-on' : ''}" data-emoji="${escapeHtml(e)}">${e}</button>`).join('')}
             </div>
             <input type="text" class="dsp-item-in-desc" data-field="desc" value="${escapeHtml(f.desc)}" placeholder="Very short description (shown on hover)" maxlength="120" aria-label="Description">
-            <input type="text" class="dsp-item-in-eff" data-field="effects" value="${escapeHtml(f.effects)}" placeholder="${isItem ? 'Effects while equipped, e.g. STR +2, DEX -1 (optional)' : 'Effects while it lasts, e.g. DEX -3 (optional)'}" maxlength="80" aria-label="Effects">
+            <input type="text" class="dsp-item-in-eff" data-field="effects" value="${escapeHtml(f.effects)}" placeholder="${effPh}" maxlength="80" aria-label="Effects">
             <div class="dsp-item-form-row">
-                ${isItem ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-equipped" ${f.equipped ? 'checked' : ''}> Equipped</label>
-                <label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> AI can remove</label>` : ''}
+                ${isItem ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-equipped" ${f.equipped ? 'checked' : ''}> Equipped</label>` : ''}
+                ${isItem || isAbility ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> AI can remove</label>` : ''}
                 <span class="dsp-item-error" role="alert">${escapeHtml(f.error)}</span>
                 <button type="button" class="dsp-text-btn" data-action="item-cancel">Cancel</button>
-                <button type="button" class="dsp-text-btn is-primary" data-action="item-add">Add</button>
+                <button type="button" class="dsp-text-btn is-primary" data-action="item-add">${f.editId ? 'Save' : 'Add'}</button>
             </div>
         </div>`;
+}
+
+/** Opens the form on an existing entry, filled in. */
+function openEdit(kind, id) {
+    if (!selected) return;
+    const list = kind === 'item' ? getEquipment(selected.name, selected.isUser)
+        : kind === 'ability' ? getAbilities(selected.name, selected.isUser)
+            : getConditions(selected.name, selected.isUser);
+    const e = list.find(x => x.id === id);
+    if (!e) return;
+    resetForm();
+    Object.assign(itemForm, {
+        open: true, kind, editId: id,
+        icon: e.icon || '', name: e.name || '', desc: e.desc || '',
+        effects: e.effects && Object.keys(e.effects).length ? effectText(e.effects) : '',
+        qty: String(e.qty || 1), equipped: !!e.equipped,
+        aiCanRemove: e.aiCanRemove !== false, type: e.type === 'spell' ? 'spell' : 'ability',
+    });
+    renderAll();
 }
 
 function equipmentHtml() {
@@ -365,7 +402,7 @@ function conditionsHtml() {
                 const tip = [c.name, c.desc, eff].filter(Boolean).join(' — ');
                 return `<span class="dsp-cond" data-id="${escapeHtml(c.id)}" data-tip="${escapeHtml(tip)}" tabindex="0" aria-label="${escapeHtml(tip)}">
                     <span class="dsp-cond-icon">${escapeHtml(c.icon || DEFAULT_CONDITION_ICON)}</span>
-                    <span class="dsp-cond-name">${escapeHtml(c.name)}</span>
+                    <span class="dsp-cond-name dsp-edit-open" title="Click to edit">${escapeHtml(c.name)}</span>
                     ${eff ? `<span class="dsp-cond-eff">${escapeHtml(eff)}</span>` : ''}
                     <button type="button" class="dsp-cond-remove" title="End ${escapeHtml(c.name)}"><i class="fa-solid fa-xmark"></i></button>
                 </span>`;
@@ -374,15 +411,71 @@ function conditionsHtml() {
         </section>`;
 }
 
+function abilityRowHtml(a) {
+    const locked = a.aiCanRemove === false;
+    const eff = effectText(a.effects);
+    const tip = [a.name, a.desc, eff && `${eff} (passive)`].filter(Boolean).join(' — ');
+    return `
+        <div class="dsp-item dsp-ability${locked ? ' is-locked' : ''}" data-id="${escapeHtml(a.id)}" data-tip="${escapeHtml(tip)}">
+            <span class="dsp-item-icon" tabindex="0" aria-label="${escapeHtml(tip)}">${escapeHtml(a.icon)}</span>
+            <span class="dsp-item-main dsp-edit-open" title="Click to edit">
+                <span class="dsp-item-name">${escapeHtml(a.name)}</span>
+                ${eff ? `<span class="dsp-item-eff">${escapeHtml(eff)}</span>` : ''}
+            </span>
+            <button type="button" class="dsp-item-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" class="dsp-item-lock" aria-pressed="${locked}"
+                title="${locked ? 'Locked: the AI cannot remove it. Click to let the AI remove it' : 'The AI can remove it. Click to lock it'}">
+                <i class="fa-solid ${locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
+            <button type="button" class="dsp-item-remove" title="Remove ${escapeHtml(a.name)}"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+}
+
+function abilitiesHtml() {
+    const list = getAbilities(selected.name, selected.isUser);
+    const spells = list.filter(a => a.type === 'spell');
+    const skills = list.filter(a => a.type !== 'spell');
+    const formOpen = itemForm.open && itemForm.kind === 'ability';
+    const seeding = needsStartingAbilities(selected.name, selected.isUser);
+    const seedNote = seeding
+        ? `<div class="dsp-gear-note"><i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>In its next reply the AI will add the spells and abilities ${escapeHtml(selected.name)} already knows, from ${selected.isUser ? 'your persona description' : 'their description'} and the scene.</span>
+                <button type="button" class="dsp-text-btn" data-action="abl-cancel" title="Don't ask">Cancel</button></div>`
+        : '';
+    return `
+        <section class="dsp-section dsp-equip dsp-abilities">
+            <h3 class="dsp-section-title">Spells &amp; Abilities <span class="dsp-scale">${list.length || ''}</span>
+                ${seeding ? '' : '<button type="button" class="dsp-text-btn dsp-item-new" data-action="abl-request" title="Ask the AI, in its next reply, to add what this character already knows"><i class="fa-solid fa-wand-magic-sparkles"></i> Starting</button>'}
+                ${formOpen ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open" data-kind="ability"><i class="fa-solid fa-plus"></i> Add</button>`}</h3>
+            ${seedNote}
+            ${list.length ? `
+                ${spells.length ? `<div class="dsp-subhead"><i class="fa-solid fa-hat-wizard"></i> Spells <span>${spells.length}</span></div>
+                <div class="dsp-items">${spells.map(abilityRowHtml).join('')}</div>` : ''}
+                ${skills.length ? `<div class="dsp-subhead"><i class="fa-solid fa-star"></i> Abilities <span>${skills.length}</span></div>
+                <div class="dsp-items">${skills.map(abilityRowHtml).join('')}</div>` : ''}`
+            : (formOpen ? '' : '<div class="dsp-items-empty">Nothing yet. The AI adds what is learned or shown being used — or add it yourself.</div>')}
+            ${formHtml('ability')}
+        </section>`;
+}
+
 function submitItemForm() {
     if (!selected) return;
     const f = itemForm;
-    const res = f.kind === 'condition'
-        ? addCondition(selected.name, selected.isUser, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects })
-        : addItem(selected.name, selected.isUser, {
+    const who = [selected.name, selected.isUser];
+    let res;
+    if (f.editId) {
+        if (f.kind === 'condition') res = updateCondition(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects });
+        else if (f.kind === 'ability') res = updateAbility(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, aiCanRemove: f.aiCanRemove });
+        else res = updateItem(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, qty: f.qty, equipped: f.equipped, aiCanRemove: f.aiCanRemove });
+    } else if (f.kind === 'condition') {
+        res = addCondition(...who, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects });
+    } else if (f.kind === 'ability') {
+        res = addAbility(...who, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, aiCanRemove: f.aiCanRemove });
+    } else {
+        res = addItem(...who, {
             icon: f.icon, name: f.name, desc: f.desc, effects: f.effects,
             qty: f.qty, equipped: f.equipped, aiCanRemove: f.aiCanRemove,
         });
+    }
     if (res && res.error) { f.error = res.error; renderAll(); return; }
     resetForm();
     renderAll();
@@ -613,11 +706,22 @@ function bindRootListeners(root) {
         }
         const emoji = e.target.closest('.dsp-emoji');
         if (emoji) { itemForm.icon = emoji.getAttribute('data-emoji'); renderAll(); return; }
+        const ablRow = e.target.closest('.dsp-ability');
+        if (ablRow && selected) {
+            const id = ablRow.getAttribute('data-id');
+            const a = getAbilities(selected.name, selected.isUser).find(x => x.id === id);
+            if (!a) return;
+            if (e.target.closest('.dsp-item-edit, .dsp-edit-open')) { openEdit('ability', id); return; }
+            if (e.target.closest('.dsp-item-lock')) { updateAbility(selected.name, selected.isUser, id, { aiCanRemove: a.aiCanRemove === false }); return; }
+            if (e.target.closest('.dsp-item-remove')) { removeAbility(selected.name, selected.isUser, id); return; }
+            return;
+        }
         const itemRow = e.target.closest('.dsp-item');
         if (itemRow && selected) {
             const id = itemRow.getAttribute('data-id');
             const item = getEquipment(selected.name, selected.isUser).find(i => i.id === id);
             if (!item) return;
+            if (e.target.closest('.dsp-item-edit, .dsp-edit-open')) { openEdit('item', id); return; }
             if (e.target.closest('.dsp-item-lock')) { updateItem(selected.name, selected.isUser, id, { aiCanRemove: item.aiCanRemove === false }); return; }
             if (e.target.closest('.dsp-item-equip')) { updateItem(selected.name, selected.isUser, id, { equipped: !item.equipped }); return; }
             const qtyBtn = e.target.closest('.dsp-qty-btn');
@@ -634,6 +738,7 @@ function bindRootListeners(root) {
             removeCondition(selected.name, selected.isUser, cond.getAttribute('data-id'));
             return;
         }
+        if (cond && selected && e.target.closest('.dsp-edit-open')) { openEdit('condition', cond.getAttribute('data-id')); return; }
         const value = e.target.closest('button.dsp-value');
         if (value) { startEdit(value); return; }
         const action = e.target.closest('[data-action]')?.getAttribute('data-action');
@@ -649,6 +754,8 @@ function bindRootListeners(root) {
         if (action === 'item-cancel') { resetForm(); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
         if (action === 'gear-request' && selected) { requestStartingGear(selected.name, selected.isUser); return; }
+        if (action === 'abl-request' && selected) { requestStartingAbilities(selected.name, selected.isUser); return; }
+        if (action === 'abl-cancel' && selected) { cancelStartingAbilities(selected.name, selected.isUser); return; }
         if (action === 'gear-cancel' && selected) { cancelStartingGear(selected.name, selected.isUser); return; }
         if (action === 'close') closeStatsPanel();
         else if (action === 'popout') openPopout();
@@ -673,6 +780,7 @@ function bindRootListeners(root) {
     root.addEventListener('change', (e) => {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
+        if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; }
     });
     root.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && e.target.closest && e.target.closest('.dsp-item-form') && e.target.matches('input[type=text], input[type=number]')) {

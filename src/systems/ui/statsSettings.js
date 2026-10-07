@@ -18,6 +18,7 @@ import {
 import { isMemoriesEnabled, setMemoriesEnabled, getRecentLimit, setRecentLimit } from '../features/characterMemories.js';
 import { isEquipmentEnabled, setEquipmentEnabled } from '../features/characterEquipment.js';
 import { isConditionsEnabled, setConditionsEnabled } from '../features/characterConditions.js';
+import { isAbilitiesEnabled, setAbilitiesEnabled } from '../features/characterAbilities.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -83,6 +84,8 @@ let bound = false;
 /** Renders the rows and wires them up (once). */
 export function initStatsSettings() {
     renderStatsSettings();
+    const abOn = document.getElementById('rpg-abilities-enabled');
+    if (abOn) abOn.checked = isAbilitiesEnabled();
     const cdOn = document.getElementById('rpg-conditions-enabled');
     if (cdOn) cdOn.checked = isConditionsEnabled();
     const eqOn = document.getElementById('rpg-equipment-enabled');
@@ -100,6 +103,7 @@ export function initStatsSettings() {
         else if (el.classList.contains('rpg-stat-color')) setStatColor(el.getAttribute('data-stat'), el.value);
         else if (el.id === 'rpg-equipment-enabled') setEquipmentEnabled(el.checked);
         else if (el.id === 'rpg-conditions-enabled') setConditionsEnabled(el.checked);
+        else if (el.id === 'rpg-abilities-enabled') setAbilitiesEnabled(el.checked);
         else if (el.id === 'rpg-memories-enabled') setMemoriesEnabled(el.checked);
         else if (el.id === 'rpg-memories-recent') { setRecentLimit(el.value); el.value = String(getRecentLimit()); }
     });

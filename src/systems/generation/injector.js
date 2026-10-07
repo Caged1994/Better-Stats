@@ -20,6 +20,7 @@ import { revertAIStatsForReplacedMessage } from '../features/characterStats.js';
 import { revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
 import { revertAIEquipmentForReplacedMessage } from '../features/characterEquipment.js';
 import { revertAIConditionsForReplacedMessage } from '../features/characterConditions.js';
+import { revertAIAbilitiesForReplacedMessage } from '../features/characterAbilities.js';
 import { getPendingTwist, isPendingTwistAKnife, getPendingKnifeCharacter, clearPendingTwist, buildDoomTensionInstruction, DOOM_TWIST_SLOT, DOOM_TENSION_SLOT } from './doomCounter.js';
 import {
     generateTrackerExample,
@@ -675,6 +676,7 @@ export async function onGenerationStarted(type, data, dryRun) {
             revertAIMemoriesForReplacedMessage(last);
             revertAIEquipmentForReplacedMessage(last);
             revertAIConditionsForReplacedMessage(last);
+            revertAIAbilitiesForReplacedMessage(last);
         } catch (e) { /* best-effort */ }
     }
     if (!extensionSettings.enabled) {

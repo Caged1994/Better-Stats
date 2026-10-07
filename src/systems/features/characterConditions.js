@@ -25,6 +25,7 @@ import {
     buildConditionsPrompt,
     formatConditions,
 } from '../../utils/conditionModel.js';
+import { cleanIcon } from '../../utils/equipmentModel.js';
 import { currentCampaignKey, getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
 import { resolveTarget, resolveEffectsFor, describeEffects } from './characterEquipment.js';
 
@@ -94,6 +95,24 @@ export function addCondition(name, isUser, input) {
     list.push(c);
     changed({ name });
     return c;
+}
+
+/** Edits any field of a condition. Returns true, or { error }. */
+export function updateCondition(name, isUser, id, changes = {}) {
+    const list = getConditions(name, isUser);
+    const c = list.find(x => x.id === id);
+    if (!c) return { error: 'Not found.' };
+    if (typeof changes.name === 'string' && changes.name.trim()) {
+        const n = changes.name.trim().slice(0, 40);
+        const dup = findCondition(list, n);
+        if (dup && dup.id !== id) return { error: `${name} is already "${n}".` };
+        c.name = n;
+    }
+    if (typeof changes.desc === 'string') c.desc = changes.desc.trim().slice(0, 120);
+    if (typeof changes.icon === 'string' && changes.icon.trim()) c.icon = cleanIcon(changes.icon);
+    if (changes.effects !== undefined) c.effects = resolveEffectsFor(name, isUser, changes.effects);
+    changed({ name });
+    return true;
 }
 
 export function removeCondition(name, isUser, id) {

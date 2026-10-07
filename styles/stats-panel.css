@@ -644,6 +644,7 @@ body.dooms-perf-mode #dooms-stats-panel {
 }
 
 .dsp-item-lock,
+.dsp-item-edit,
 .dsp-item-remove {
     flex: 0 0 auto;
     width: 20px;
@@ -658,6 +659,7 @@ body.dooms-perf-mode #dooms-stats-panel {
 }
 
 .dsp-item-lock:hover,
+.dsp-item-edit:hover,
 .dsp-item-remove:hover { color: var(--dsp-text); background: var(--dsp-card-hover); }
 
 .dsp-item.is-locked .dsp-item-lock { color: #f0c040; }
@@ -942,3 +944,36 @@ body.dooms-perf-mode #dooms-stats-panel {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
     pointer-events: none;
 }
+
+/* ── Editing entries / spells & abilities ───────────────────── */
+.dsp-edit-open { cursor: pointer; }
+.dsp-item-main.dsp-edit-open:hover .dsp-item-name,
+.dsp-cond-name.dsp-edit-open:hover { text-decoration: underline; text-decoration-color: var(--dsp-muted); }
+
+.dsp-item-edit { opacity: 0.6; }
+.dsp-item:hover .dsp-item-edit { opacity: 1; }
+
+.dsp-item-form.is-edit {
+    border-color: color-mix(in srgb, var(--dsp-accent) 55%, var(--dsp-border));
+}
+
+.dsp-form-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dsp-accent);
+}
+
+.dsp-item-form select {
+    font: inherit;
+    font-size: 13px;
+    color: var(--dsp-text);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--dsp-border);
+    border-radius: 7px;
+    padding: 5px 6px;
+}
+
+.dsp-ability .dsp-item-eff { color: #9ec5ff; }
+.dsp-ability .dsp-item-icon { background: rgba(120, 140, 255, 0.12); }

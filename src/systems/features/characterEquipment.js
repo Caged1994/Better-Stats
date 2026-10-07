@@ -129,7 +129,12 @@ export function updateItem(name, isUser, id, changes = {}) {
     if (typeof changes.aiCanRemove === 'boolean') item.aiCanRemove = changes.aiCanRemove;
     if (typeof changes.desc === 'string') item.desc = changes.desc.trim().slice(0, 120);
     if (typeof changes.icon === 'string' && changes.icon.trim()) item.icon = makeItem({ name: 'x', icon: changes.icon }).icon;
-    if (typeof changes.name === 'string' && changes.name.trim()) item.name = changes.name.trim().slice(0, 40);
+    if (typeof changes.name === 'string' && changes.name.trim()) {
+        const n = changes.name.trim().slice(0, 40);
+        const dup = findItem(getEquipment(name, isUser), n);
+        if (dup && dup.id !== id) return { error: `${name} already has "${n}".` };
+        item.name = n;
+    }
     if (typeof changes.equipped === 'boolean') item.equipped = changes.equipped;
     if (changes.qty !== undefined) {
         const q = Math.round(Number(changes.qty));
@@ -408,6 +413,6 @@ export function notifyBlockedRemovals(result) {
     if (!blocked.length) return;
     try {
         const list = blocked.map(b => `${b.name}: ${b.item}`).join(', ');
-        window.toastr?.info(`The story tried to remove locked items (${list}). They were kept — remove them from the Stats panel if you agree.`, 'Equipment', { timeOut: 6000 });
+        window.toastr?.info(`The story tried to remove locked entries (${list}). They were kept — remove them from the Stats panel if you agree.`, 'Stats', { timeOut: 6000 });
     } catch (e) {}
 }

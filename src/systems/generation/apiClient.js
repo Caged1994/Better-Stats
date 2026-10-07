@@ -32,6 +32,7 @@ import { applyAIStatUpdates } from '../features/characterStats.js';
 import { applyAIMemories } from '../features/characterMemories.js';
 import { applyAIEquipment, notifyBlockedRemovals } from '../features/characterEquipment.js';
 import { applyAIConditions } from '../features/characterConditions.js';
+import { applyAIAbilities } from '../features/characterAbilities.js';
 import { renderThoughts, updateChatThoughts } from '../rendering/thoughts.js';
 import { renderQuests } from '../rendering/quests.js';
 import { i18n } from '../../core/i18n.js';
@@ -368,7 +369,14 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
                     console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
-            console.log(`[Dooms Tracker] Tracker update — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            console.log(`[Dooms Tracker] Tracker update — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            if (parsedData.abilities) {
+                try {
+                    notifyBlockedRemovals(applyAIAbilities(parsedData.abilities, chat.length - 1));
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Abilities: applying AI update failed', e);
+                }
+            }
             if (parsedData.conditions) {
                 try {
                     applyAIConditions(parsedData.conditions, chat.length - 1);
