@@ -28,7 +28,7 @@ import {
     getPersonaName,
 } from '../features/characterStats.js';
 import { getCharacterList, resolveActiveUserName, resolvePortrait } from './portraitBar.js';
-import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled } from '../features/characterEquipment.js';
+import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled, needsStartingGear, requestStartingGear, cancelStartingGear } from '../features/characterEquipment.js';
 import { ITEM_EMOJI, DEFAULT_ICON } from '../../utils/equipmentModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
@@ -284,11 +284,19 @@ function equipmentHtml() {
                 <button type="button" class="dsp-text-btn is-primary" data-action="item-add">Add</button>
             </div>
         </div>` : '';
+    const seeding = needsStartingGear(selected.name, selected.isUser);
+    const seedNote = seeding
+        ? `<div class="dsp-gear-note"><i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>In its next reply the AI will add what ${escapeHtml(selected.name)} already carries, from ${selected.isUser ? 'your persona description' : 'their description'} and the scene.</span>
+                <button type="button" class="dsp-text-btn" data-action="gear-cancel" title="Don't ask">Cancel</button></div>`
+        : '';
     return `
         <section class="dsp-section dsp-equip">
             <h3 class="dsp-section-title">Equipment <span class="dsp-scale">${items.length || ''}</span>
-                ${f.open ? '' : '<button type="button" class="dsp-text-btn dsp-item-new" data-action="item-open"><i class="fa-solid fa-plus"></i> Add item</button>'}</h3>
-            ${items.length ? `<div class="dsp-items">${items.map(itemHtml).join('')}</div>` : (f.open ? '' : '<div class="dsp-items-empty">Nothing yet. The AI adds what is picked up, bought or given — or add it yourself.</div>')}
+                ${seeding ? '' : '<button type="button" class="dsp-text-btn dsp-item-new dsp-gear-btn" data-action="gear-request" title="Ask the AI, in its next reply, to add what this character already carries"><i class="fa-solid fa-wand-magic-sparkles"></i> Starting gear</button>'}
+                ${f.open ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open"><i class="fa-solid fa-plus"></i> Add item</button>`}</h3>
+            ${seedNote}
+            ${items.length ? `<div class="dsp-items">${items.map(itemHtml).join('')}</div>` : (f.open ? '' : '<div class="dsp-items-empty">Nothing yet. The AI adds what is picked up, bought, given or shown being used — or add it yourself.</div>')}
             ${form}
         </section>`;
 }
@@ -544,6 +552,8 @@ function bindRootListeners(root) {
         if (action === 'item-open') { itemForm.open = true; itemForm.error = ''; renderAll(); root.querySelector('.dsp-item-in-name')?.focus(); return; }
         if (action === 'item-cancel') { Object.assign(itemForm, { open: false, icon: '', name: '', desc: '', aiCanRemove: true, error: '' }); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
+        if (action === 'gear-request' && selected) { requestStartingGear(selected.name, selected.isUser); return; }
+        if (action === 'gear-cancel' && selected) { cancelStartingGear(selected.name, selected.isUser); return; }
         if (action === 'close') closeStatsPanel();
         else if (action === 'popout') openPopout();
         else if (action === 'dock') dockPopout();

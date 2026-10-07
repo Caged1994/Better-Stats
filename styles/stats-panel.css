@@ -736,3 +736,21 @@ body.dooms-perf-mode #dooms-stats-panel {
     border-color: color-mix(in srgb, var(--dsp-accent) 60%, transparent);
     background: color-mix(in srgb, var(--dsp-accent) 18%, transparent);
 }
+
+.dsp-item-new.is-second { margin-left: 0; }
+
+.dsp-gear-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--dsp-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--dsp-accent) 10%, transparent);
+}
+.dsp-gear-note span { flex: 1; }
+.dsp-gear-note i { color: var(--dsp-accent); }
+.dsp-gear-note .dsp-text-btn { padding: 2px 7px; font-size: 11px; }

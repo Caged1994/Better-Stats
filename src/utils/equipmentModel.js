@@ -175,27 +175,36 @@ export function formatItems(list) {
 
 /**
  * The prompt section for the characters in the scene.
- * @param {Array<{name: string, isUser: boolean, items: object[], isNew?: boolean}>} entries
+ * Entries with `needsGear` have an empty list nobody has filled yet: the AI
+ * is asked, once, to add what they already carry (from their description,
+ * the persona description, or the scene).
+ * @param {Array<{name: string, isUser: boolean, items: object[], needsGear?: boolean}>} entries
  * @param {{compact?: boolean, standalone?: boolean}} [options]
  */
 export function buildEquipmentPrompt(entries, { compact = true, standalone = false } = {}) {
     const list = (entries || []).filter(e => e && e.name);
     if (!list.length) return '';
-    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatItems(e.items) : 'nothing'}`);
-    const fresh = list.filter(e => e.isNew).map(e => e.name);
+    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatItems(e.items) : 'nothing listed yet'}`);
+    const seed = list.filter(e => e.needsGear).map(e => e.name);
+    const player = list.find(e => e.isUser)?.name;
     const example = JSON.stringify({ equipment: { [list[0].name]: { add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain soldier\'s blade' }], remove: ['Torch'] } } });
     const where = standalone ? 'start your reply with ONE JSON code block' : 'add an "equipment" key to the same tracker JSON object';
     let out = compact
         ? 'EQUIPMENT (what each carries):\n'
         : 'EQUIPMENT — what each character currently carries or wears:\n';
     out += lines.join('\n') + '\n';
+    const playerNote = player
+        ? (compact
+            ? ` — including anything ${player} takes out or uses in the user's message, even if never mentioned before`
+            : `. This includes anything ${player} takes out, shows or uses in the user's message, even if it was never mentioned before — the user decides what their character carries`)
+        : '';
     out += compact
-        ? `Only when someone gains or loses an item (picks up, buys, is given, drops, breaks, uses up), ${where}: ${example} — one emoji, a short name, a desc under 8 words. ${LOCK_MARK} items can never be removed. Omit the key when nothing changes.`
-        : `EQUIPMENT CHANGES: only when a character gains or loses an item — picks it up, buys it, is given it, drops it, gives it away, breaks it or uses it up — ${where}, like ${example}. Each new item has one emoji icon, a short name and a description under 8 words. Remove items by their exact name. Items marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
-    if (fresh.length) {
+        ? `Keep the lists true to the story. When someone gains an item (picks up, buys, is given) or is shown already having, wearing or using one that is not listed${playerNote}, or loses one (drops, gives away, breaks, uses up), ${where}: ${example} — one emoji, a short name, a desc under 8 words. ${LOCK_MARK} items can never be removed. Omit the key when nothing changes.`
+        : `EQUIPMENT CHANGES: keep these lists true to the story. Add an item when a character gains it — picks it up, buys it, is given it — or when the story shows them already having, wearing or using something that is not listed yet${playerNote}. Remove an item when they drop it, give it away, break it or use it up. Write the change with ${where}, like ${example}. Each new item has one emoji icon, a short name and a description under 8 words. Remove items by their exact name. Items marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
+    if (seed.length) {
         out += compact
-            ? `\nNEW: also add the visible gear ${fresh.join(', ')} ${fresh.length === 1 ? 'carries' : 'carry'} (a few items).`
-            : `\nNEW CHARACTERS: also add the visible gear ${fresh.join(', ')} ${fresh.length === 1 ? 'carries' : 'carry'} right now (a few key items, not every trinket).`;
+            ? `\nSTARTING GEAR: add what ${seed.join(', ')} already ${seed.length === 1 ? 'carries' : 'carry'} and ${seed.length === 1 ? 'wears' : 'wear'} now, from their description and the scene (a few key items).`
+            : `\nSTARTING GEAR: ${seed.join(', ')} ${seed.length === 1 ? 'has' : 'have'} no equipment listed yet. Add what they already carry and wear right now, based on their character description (or persona description) and the scene — a few key items, not every trinket.`;
     }
     return out.trim();
 }

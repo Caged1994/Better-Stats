@@ -8,7 +8,12 @@
  *
  * The AI adds and removes items through an "equipment" key in the tracker
  * JSON. It can only remove items whose aiCanRemove is on; the others are
- * locked by the user. Swiping or regenerating a reply undoes its changes
+ * locked by the user.
+ *
+ * Starting gear: a character whose list is empty is asked about once — the
+ * AI adds what they already carry, from their description and the scene.
+ * extensionSettings.characterEquipmentSeeded[campaignKey][key] is true once
+ * asked, or 'request' when the user asked for it again from the panel. Swiping or regenerating a reply undoes its changes
  * (chat_metadata.dooms_tracker.equipmentUndo).
  *
  * The pure logic is in src/utils/equipmentModel.js.
@@ -30,7 +35,6 @@ import {
     currentCampaignKey,
     getStatCharacters,
     statKey,
-    isStatGenerationPending,
     notifyStatsChanged,
     PLAYER_WORDS,
 } from './characterStats.js';
@@ -137,6 +141,8 @@ export function deleteEquipmentEverywhere(name, isUser = false) {
 export function deleteCampaignEquipment(campaignId) {
     const root = extensionSettings.characterEquipment;
     if (root && campaignId && root[campaignId]) delete root[campaignId];
+    const seeded = extensionSettings.characterEquipmentSeeded;
+    if (seeded && campaignId && seeded[campaignId]) delete seeded[campaignId];
 }
 
 /** An alias merge: the variant's items join the canonical NPC's. */
@@ -155,14 +161,64 @@ export function mergeEquipment(canonical, variant) {
     }
 }
 
+// ─── Starting gear ──────────────────────────────────────────────────────────
+
+function seededBucket(create = false) {
+    if (!extensionSettings.characterEquipmentSeeded || typeof extensionSettings.characterEquipmentSeeded !== 'object') {
+        if (!create) return null;
+        extensionSettings.characterEquipmentSeeded = {};
+    }
+    const root = extensionSettings.characterEquipmentSeeded;
+    const ck = currentCampaignKey();
+    if (!root[ck] || typeof root[ck] !== 'object') {
+        if (!create) return null;
+        root[ck] = {};
+    }
+    return root[ck];
+}
+
+function seededState(key) {
+    const b = seededBucket();
+    const k = findKey(b, key);
+    return k !== undefined ? b[k] : undefined;
+}
+
+/** Will the next reply be asked to fill in this character's starting gear? */
+export function needsStartingGear(name, isUser = false) {
+    const key = statKey(name, isUser);
+    const state = seededState(key);
+    if (state === 'request') return true;
+    return !state && getEquipment(name, isUser).length === 0;
+}
+
+/** The user asks for the starting gear again (next reply, even with a list). */
+export function requestStartingGear(name, isUser = false) {
+    const b = seededBucket(true);
+    const key = statKey(name, isUser);
+    const k = findKey(b, key);
+    b[k !== undefined ? k : key] = 'request';
+    changed({ name });
+}
+
+/** Cancels a pending request (or marks the gear as already handled). */
+export function cancelStartingGear(name, isUser = false) {
+    const b = seededBucket(true);
+    const key = statKey(name, isUser);
+    const k = findKey(b, key);
+    b[k !== undefined ? k : key] = true;
+    changed({ name });
+}
+
 // ─── Prompt ─────────────────────────────────────────────────────────────────
 
 export function buildEquipmentPromptForGeneration({ compact = true, standalone = false } = {}) {
     if (!isEquipmentEnabled()) return '';
-    const entries = getStatCharacters().map(({ name, isUser }) => {
-        const items = getEquipment(name, isUser);
-        return { name, isUser, items, isNew: !isUser && !items.length && isStatGenerationPending(name, false) };
-    });
+    const entries = getStatCharacters().map(({ name, isUser }) => ({
+        name,
+        isUser,
+        items: getEquipment(name, isUser),
+        needsGear: needsStartingGear(name, isUser),
+    }));
     return buildEquipmentPrompt(entries, { compact, standalone });
 }
 
@@ -221,6 +277,11 @@ export function applyAIEquipment(raw, messageIndex) {
     if (!isEquipmentEnabled() || raw === null || raw === undefined) return result;
     const undoAdded = [];
     const undoRemoved = [];
+    // The characters this reply was asked to give starting gear to: asked
+    // once, so they are marked as done whatever the reply contained.
+    const asked = getStatCharacters()
+        .filter(c => needsStartingGear(c.name, c.isUser))
+        .map(c => ({ key: statKey(c.name, c.isUser), prev: seededState(statKey(c.name, c.isUser)) ?? null }));
     for (const change of normalizeAIEquipment(raw)) {
         const target = resolveTarget(change.name);
         if (!target) continue;
@@ -243,7 +304,14 @@ export function applyAIEquipment(raw, messageIndex) {
         for (const item of plan.blocked) result.blocked.push({ name: target.name, item: item.name });
     }
     console.log(`[Dooms Tracker] Equipment: ${result.added} added, ${result.removed} removed${result.blocked.length ? `, ${result.blocked.length} locked kept` : ''}`);
-    if (!result.added && !result.removed) return result;
+    if (asked.length) {
+        const sb = seededBucket(true);
+        for (const a of asked) {
+            const k = findKey(sb, a.key);
+            sb[k !== undefined ? k : a.key] = true;
+        }
+    }
+    if (!result.added && !result.removed && !asked.length) return result;
     const campaign = currentCampaignKey();
     try {
         if (chat_metadata) {
@@ -255,6 +323,7 @@ export function applyAIEquipment(raw, messageIndex) {
                 campaign,
                 added: same ? [...prev.added, ...undoAdded] : undoAdded,
                 removed: same ? [...prev.removed, ...undoRemoved] : undoRemoved,
+                seeded: same ? [...(prev.seeded || []), ...asked] : asked,
             };
         }
     } catch (e) { /* undo is best-effort */ }
@@ -285,7 +354,16 @@ export function revertAIEquipmentForReplacedMessage(replacedIndex) {
             list.splice(Math.min(index, list.length), 0, item);
             n++;
         }
-        if (n) changed({ source: 'undo' });
+        // The replaced reply was the one asked for starting gear: ask again.
+        const sb = seededBucket();
+        for (const { key, prev } of rec.seeded || []) {
+            if (!sb) break;
+            const k = findKey(sb, key);
+            if (k === undefined) continue;
+            if (prev === null || prev === undefined) delete sb[k];
+            else sb[k] = prev;
+        }
+        if (n || (rec.seeded || []).length) changed({ source: 'undo' });
         saveChatData();
         return n;
     } catch (e) {
