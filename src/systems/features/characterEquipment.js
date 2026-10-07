@@ -193,7 +193,23 @@ function resolveTarget(name) {
     const npc = scene.find(c => !c.isUser && c.name.toLowerCase() === lower);
     if (npc) return { name: npc.name, isUser: false };
     if (Object.keys(extensionSettings.userCharacters || {}).some(n => n.toLowerCase() === lower)) return null;
-    return { name: String(name).trim(), isUser: false };
+    // Anyone else must be a character DES already knows — otherwise a stray
+    // key (e.g. an old-style inventory's "onPerson") would become a character.
+    const known = [
+        extensionSettings.knownCharacters,
+        chat_metadata?.dooms_tracker?.knownCharacters,
+        extensionSettings.characterStatSheets?.npc,
+        extensionSettings.npcAvatars,
+    ];
+    for (const map of known) {
+        const k = map && typeof map === 'object' ? Object.keys(map).find(n => n.toLowerCase() === lower) : undefined;
+        if (k) return { name: k, isUser: false };
+    }
+    const existing = bucket();
+    const ek = existing ? Object.keys(existing).find(k => k.toLowerCase() === `npc:${lower}`) : undefined;
+    if (ek) return { name: ek.slice(4), isUser: false };
+    console.log(`[Dooms Tracker] Equipment: ignored "${name}" — not a known character`);
+    return null;
 }
 
 /**

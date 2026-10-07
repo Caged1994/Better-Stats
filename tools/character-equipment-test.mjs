@@ -137,6 +137,28 @@ check('without a resolvable Workshop persona, SillyTavern\'s persona is still in
 extensionSettings.userCharacters = savedUsers;
 extensionSettings.activeUserCharacter = 'Mastera';
 
+// ── 4c. Every shape a model plausibly uses ends up in the list ──
+const shapes = {
+    'a plain list of strings': '"equipment":{"Mastera":["⚡ Spark stone"]}',
+    'a list of objects': '"equipment":{"Mastera":[{"icon":"⚡","name":"Spark stone","desc":"Hums"}]}',
+    'an "items" key': '"equipment":{"Mastera":{"items":[{"icon":"⚡","name":"Spark stone"}]}}',
+    'an "inventory" key': '"inventory":{"Mastera":{"add":[{"icon":"⚡","name":"Spark stone"}]}}',
+    'an emoji in front of the name': '"equipment":{"Mastera":{"add":["⚡ Spark stone"]}}',
+};
+for (const [label, body] of Object.entries(shapes)) {
+    const before = Eq.getEquipment('Mastera', true).filter(i => i.name !== 'Spark stone');
+    extensionSettings.characterEquipment._base['user:Mastera'] = before;
+    const p = parseResponse('```json\n{"infoBox":{"location":{"value":"Cave"}},' + body + '}\n```\nStory');
+    chat.push({ is_user: true, mes: 'x' }, { is_user: false, mes: 'y' });
+    Eq.applyAIEquipment(p.equipment, chat.length - 1);
+    const got = Eq.getEquipment('Mastera', true).find(i => i.name === 'Spark stone');
+    check(`equipment from ${label}`, !!got && got.icon === '⚡', JSON.stringify(Eq.getEquipment('Mastera', true).map(i => i.icon + i.name)));
+}
+const legacy = parseResponse('```json\n{"inventory":{"onPerson":"sword","stored":{}}}\n```\nx');
+Eq.applyAIEquipment(legacy.equipment, 999);
+check('an old-style inventory does not invent characters', !Object.keys(extensionSettings.characterEquipment._base).some(k => /onperson|stored/i.test(k)));
+check('a list never removes what it leaves out', Eq.getEquipment('Mastera', true).some(i => i.name === "Father's sword"));
+
 // ── 5. Editing + cleanup ──
 const t = Eq.getEquipment('Mastera', true).find(i => i.name === 'Torch');
 Eq.updateItem('Mastera', true, t.id, { aiCanRemove: false });

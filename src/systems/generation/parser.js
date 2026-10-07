@@ -173,6 +173,8 @@ export function parseResponse(responseText) {
         // First, try to parse as unified JSON structure (new v3.1 format)
         if (extractedObjects.length === 1) {
             const parsed = repairJSON(extractedObjects[0]);
+            // Models sometimes call the equipment "inventory".
+            if (parsed && !parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
             if (parsed && (parsed.quests || parsed.infoBox || parsed.characters || parsed.stats || parsed.memories || parsed.equipment)) {
                 if (parsed.quests) {
                     result.quests = JSON.stringify(parsed.quests);
@@ -211,10 +213,11 @@ export function parseResponse(responseText) {
                 if (parsed.memories && typeof parsed.memories === 'object' && !result.memories) {
                     result.memories = JSON.stringify(parsed.memories);
                 }
+                if (!parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
                 if (parsed.equipment && typeof parsed.equipment === 'object' && !result.equipment) {
                     result.equipment = JSON.stringify(parsed.equipment);
                 }
-                if (Object.keys(parsed).every(k => k === 'stats' || k === 'memories' || k === 'equipment')) continue;
+                if (Object.keys(parsed).every(k => k === 'stats' || k === 'memories' || k === 'equipment' || k === 'inventory')) continue;
                 // Check if object is wrapped (e.g., {"quests": {...}})
                 // Unwrap single-key objects that match our tracker types
                 let unwrapped = parsed;
@@ -267,10 +270,11 @@ export function parseResponse(responseText) {
                 if (parsed.memories && typeof parsed.memories === 'object' && !result.memories) {
                     result.memories = JSON.stringify(parsed.memories);
                 }
+                if (!parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
                 if (parsed.equipment && typeof parsed.equipment === 'object' && !result.equipment) {
                     result.equipment = JSON.stringify(parsed.equipment);
                 }
-                if (Object.keys(parsed).every(k => k === 'stats' || k === 'memories' || k === 'equipment')) continue;
+                if (Object.keys(parsed).every(k => k === 'stats' || k === 'memories' || k === 'equipment' || k === 'inventory')) continue;
                 // Detect tracker type by checking for top-level fields
                 if (parsed.main !== undefined || parsed.optional !== undefined) {
                     result.quests = jsonContent;

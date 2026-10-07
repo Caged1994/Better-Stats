@@ -58,18 +58,31 @@ export function itemKey(name) {
 }
 
 export function findItem(list, name) {
-    const k = itemKey(name);
+    const k = itemKey(splitLeadingEmoji(name).name);
     if (!k) return null;
     return (list || []).find(i => itemKey(i.name) === k) || null;
 }
 
+/**
+ * "⚡ Electric stone" → { icon: '⚡', name: 'Electric stone' }. A name that
+ * does not start with an emoji is returned unchanged with no icon.
+ */
+export function splitLeadingEmoji(text) {
+    const s = String(text ?? '').trim();
+    const m = s.match(/^(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*)\s*(.*)$/u);
+    if (m && m[2]) return { icon: m[1], name: m[2] };
+    return { icon: '', name: s };
+}
+
 /** Builds an item, or null without a name. */
 export function makeItem({ icon, name, desc, aiCanRemove = true, source = 'user' } = {}) {
-    const n = clip(name, ITEM_NAME_MAX);
+    // An emoji written in front of the name becomes the icon.
+    const split = splitLeadingEmoji(name);
+    const n = clip(split.name, ITEM_NAME_MAX);
     if (!n) return null;
     return {
         id: newItemId(),
-        icon: cleanIcon(icon),
+        icon: cleanIcon(String(icon ?? '').trim() ? icon : split.icon),
         name: n,
         desc: clip(desc, ITEM_DESC_MAX),
         aiCanRemove: aiCanRemove !== false,
@@ -80,8 +93,13 @@ export function makeItem({ icon, name, desc, aiCanRemove = true, source = 'user'
 
 /**
  * Normalises the AI's "equipment" value into [{ name, add: [...], remove: [...] }].
- * Accepts { "Name": { "add": [{icon,name,desc}|"name"], "remove": ["name"] } }
- * and [{ "name": "Name", "add": [...], "remove": [...] }].
+ * Accepts, per character:
+ *   { "add": [{icon,name,desc} | "⚡ name"], "remove": ["name"] }   (the asked-for shape)
+ *   ["⚡ name", {icon,name,desc}, ...]                              (a plain list → added)
+ *   { "items" | "inventory" | "equipment" | "carries": [...] }       (→ added)
+ * and the list form [{ "name": "Name", "add": [...], "remove": [...] }].
+ * Lists are only ever ADDED: an item missing from a list is never removed,
+ * because a list may be partial.
  */
 export function normalizeAIEquipment(raw) {
     let data = raw;
@@ -91,15 +109,20 @@ export function normalizeAIEquipment(raw) {
     if (!data || typeof data !== 'object') return [];
     const toAdd = (v) => {
         if (typeof v === 'string') return { name: v };
-        if (v && typeof v === 'object') return { icon: v.icon ?? v.emoji, name: v.name ?? v.item, desc: v.desc ?? v.description };
+        if (v && typeof v === 'object') return { icon: v.icon ?? v.emoji, name: v.name ?? v.item ?? v.title, desc: v.desc ?? v.description ?? v.note };
         return null;
     };
-    const toName = (v) => (typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.name ?? v.item) : null));
+    const toName = (v) => {
+        const raw = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.name ?? v.item) : null);
+        return typeof raw === 'string' ? splitLeadingEmoji(raw).name : null;
+    };
     const arr = (v) => (Array.isArray(v) ? v : (v === undefined || v === null ? [] : [v]));
     const out = [];
     const push = (name, val) => {
-        if (typeof name !== 'string' || !name.trim() || !val || typeof val !== 'object' || Array.isArray(val)) return;
-        const add = arr(val.add ?? val.added ?? val.gain).map(toAdd).filter(a => a && typeof a.name === 'string' && a.name.trim());
+        if (typeof name !== 'string' || !name.trim() || !val || typeof val !== 'object') return;
+        if (Array.isArray(val)) val = { add: val };
+        const listed = val.add ?? val.added ?? val.gain ?? val.gained ?? val.items ?? val.inventory ?? val.equipment ?? val.carries ?? val.carried;
+        const add = arr(listed).map(toAdd).filter(a => a && typeof a.name === 'string' && a.name.trim());
         const remove = arr(val.remove ?? val.removed ?? val.lose).map(toName).filter(n => typeof n === 'string' && n.trim());
         if (add.length || remove.length) out.push({ name: name.trim(), add, remove });
     };
@@ -109,6 +132,11 @@ export function normalizeAIEquipment(raw) {
     }
     for (const [name, val] of Object.entries(data)) push(name, val);
     return out;
+}
+
+/** Item names already carried, for "is this an add?" checks. */
+export function sameItemName(a, b) {
+    return itemKey(splitLeadingEmoji(a).name) === itemKey(splitLeadingEmoji(b).name);
 }
 
 /**
@@ -132,6 +160,7 @@ export function planEquipmentChange(list, change) {
         const item = makeItem({ ...a, source: 'ai', aiCanRemove: true });
         if (!item) continue;
         const k = itemKey(item.name);
+        if (!k) continue;
         if (seen.has(k)) continue;
         seen.add(k);
         out.add.push(item);

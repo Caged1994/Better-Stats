@@ -6,6 +6,7 @@
 - **The extension is now called Better Stats.** This fork of Doom's Enhancement Suite has a new name in SillyTavern's extension list, the settings panel and the README, and its links (GitHub star button, update check) point to this fork. Saved settings are not affected.
 
 ### Fixed
+- **Items the AI added were often lost.** The equipment reader only understood the exact `add` / `remove` shape, so a reply that listed the new item plainly — `"Mastera": ["⚡ Electric stone"]`, a list of objects, an `items` key, or an `"inventory"` key instead of `"equipment"` — was parsed and then silently dropped; an emoji written in front of a name also ended up in the name instead of the icon. All of these now work. A list only ever adds (nothing is removed because a list left it out), and names that aren't characters DES knows are ignored instead of becoming new characters.
 - **The AI more reliably updates stats, equipment and memories in Together mode.** The previous reply's tracker JSON, which DES shows the AI as an example, only contained the older sections, and smaller models copy that structure and left the new keys out. It now includes `stats` and an empty `equipment` / `memories`. The player's character is also recognised when the AI calls them "you", "player" or `{{user}}`, and is kept in the prompt even when the Workshop can't tell which persona is active (SillyTavern's persona name is used). The System Log shows, for every reply, whether it carried stats, equipment and memories and what was applied.
 
 ### Added
