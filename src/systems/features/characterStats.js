@@ -42,6 +42,17 @@ import {
 } from '../../utils/statsModel.js';
 
 export const STATS_CHANGED_EVENT = 'dooms:stats-changed';
+
+// Attribute modifiers (equipped items, conditions) come from
+// characterModifiers.js, which registers here — this module must not import
+// equipment/conditions (they import it).
+let modifierProvider = null;
+export function setModifierProvider(fn) {
+    modifierProvider = typeof fn === 'function' ? fn : null;
+}
+function modifiersFor(name, isUser) {
+    try { return (modifierProvider && modifierProvider(name, isUser)) || {}; } catch (e) { return {}; }
+}
 const NO_CAMPAIGN = '_base';
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
@@ -502,6 +513,7 @@ export function buildStatsPromptForGeneration({ compact = true, standalone = fal
             stats,
             current: getCurrentStatValues(name, isUser, stats),
             generate: isStatGenerationPending(name, isUser),
+            modifiers: modifiersFor(name, isUser),
         };
     });
     return buildStatsPrompt(entries, { compact, standalone });
@@ -517,7 +529,12 @@ export function buildStatsContextSummary() {
         const stats = activeStats(getStatSheet(name, isUser));
         const cur = getCurrentStatValues(name, isUser, stats);
         const states = stats.filter(s => s.kind === 'state').map(s => `${s.name} ${cur[s.id]}%`);
-        const attrs = stats.filter(s => s.kind === 'attribute').map(s => `${s.abbr || s.name} ${cur[s.id]}`);
+        const mods = modifiersFor(name, isUser);
+        const attrs = stats.filter(s => s.kind === 'attribute').map(s => {
+            const m = mods[s.id]?.total || 0;
+            const eff = m ? clampStatValue(s, cur[s.id] + m) : cur[s.id];
+            return `${s.abbr || s.name} ${eff}${m ? ` (${m > 0 ? '+' : ''}${m})` : ''}`;
+        });
         return `${name}${isUser ? ' (player character)' : ''}: ${[...states, ...attrs].join(', ')}`;
     });
     const kept = lines.filter(l => !l.endsWith(': '));

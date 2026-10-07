@@ -6,7 +6,11 @@
  * can add items and remove the ones the user allows it to (aiCanRemove);
  * items the user locked can only be removed by the user.
  *
- * Item shape: { id, icon, name, desc, aiCanRemove, source: 'ai'|'user', createdAt }
+ * Item shape: { id, icon, name, desc, qty, equipped, effects, aiCanRemove,
+ *               source: 'ai'|'user', createdAt }
+ *   qty       — how many (a stack: "Healing potion ×3")
+ *   equipped  — worn / in hand (true) or in the backpack (false)
+ *   effects   — attribute bonuses while equipped: { statId: n } (effectsModel.js)
  */
 
 export const ITEM_NAME_MAX = 40;
@@ -14,6 +18,7 @@ export const ITEM_DESC_MAX = 120;
 export const DEFAULT_ICON = '📦';
 export const LOCK_MARK = '🔒';
 export const MAX_ITEMS = 40;
+export const MAX_QTY = 999;
 
 /** Emoji offered in the panel's quick picker. */
 export const ITEM_EMOJI = [
@@ -74,8 +79,25 @@ export function splitLeadingEmoji(text) {
     return { icon: '', name: s };
 }
 
-/** Builds an item, or null without a name. */
-export function makeItem({ icon, name, desc, aiCanRemove = true, source = 'user' } = {}) {
+function clampQty(q, fallback = 1) {
+    const n = Math.round(Number(q));
+    return Number.isFinite(n) ? Math.max(1, Math.min(MAX_QTY, n)) : fallback;
+}
+
+/** Fills the fields older saves don't have. */
+export function normalizeItem(item) {
+    if (!item || typeof item !== 'object') return item;
+    if (!Number.isFinite(item.qty) || item.qty < 1) item.qty = 1;
+    if (typeof item.equipped !== 'boolean') item.equipped = false;
+    if (!item.effects || typeof item.effects !== 'object' || Array.isArray(item.effects)) item.effects = {};
+    return item;
+}
+
+/**
+ * Builds an item, or null without a name. `effects` must already be a
+ * { statId: n } map (see effectsModel.parseEffects).
+ */
+export function makeItem({ icon, name, desc, qty = 1, equipped = false, effects = {}, aiCanRemove = true, source = 'user' } = {}) {
     // An emoji written in front of the name becomes the icon.
     const split = splitLeadingEmoji(name);
     const n = clip(split.name, ITEM_NAME_MAX);
@@ -85,6 +107,9 @@ export function makeItem({ icon, name, desc, aiCanRemove = true, source = 'user'
         icon: cleanIcon(String(icon ?? '').trim() ? icon : split.icon),
         name: n,
         desc: clip(desc, ITEM_DESC_MAX),
+        qty: clampQty(qty),
+        equipped: !!equipped,
+        effects: effects && typeof effects === 'object' && !Array.isArray(effects) ? { ...effects } : {},
         aiCanRemove: aiCanRemove !== false,
         source,
         createdAt: Date.now(),
@@ -92,14 +117,16 @@ export function makeItem({ icon, name, desc, aiCanRemove = true, source = 'user'
 }
 
 /**
- * Normalises the AI's "equipment" value into [{ name, add: [...], remove: [...] }].
+ * Normalises the AI's "equipment" value into
+ * [{ name, add: [...], remove: [{name, qty}], equip: [names], unequip: [names] }].
  * Accepts, per character:
- *   { "add": [{icon,name,desc} | "⚡ name"], "remove": ["name"] }   (the asked-for shape)
- *   ["⚡ name", {icon,name,desc}, ...]                              (a plain list → added)
- *   { "items" | "inventory" | "equipment" | "carries": [...] }       (→ added)
- * and the list form [{ "name": "Name", "add": [...], "remove": [...] }].
- * Lists are only ever ADDED: an item missing from a list is never removed,
- * because a list may be partial.
+ *   { "add": [{icon,name,desc,qty,equipped,effects} | "⚡ name"],
+ *     "remove": ["name" | {name, qty}], "equip": [...], "unequip": [...] }   (the asked-for shape)
+ *   ["⚡ name", {icon,name,...}, ...]                                       (a plain list → added)
+ *   { "items" | "inventory" | "equipment" | "carries": [...] }              (→ added)
+ * and the list form [{ "name": "Name", "add": [...], ... }].
+ * Lists are only ever ADDED, and never stack quantities: an item missing
+ * from a list is never removed, and one already carried is left as it is.
  */
 export function normalizeAIEquipment(raw) {
     let data = raw;
@@ -107,24 +134,48 @@ export function normalizeAIEquipment(raw) {
         try { data = JSON.parse(data); } catch (e) { return []; }
     }
     if (!data || typeof data !== 'object') return [];
-    const toAdd = (v) => {
-        if (typeof v === 'string') return { name: v };
-        if (v && typeof v === 'object') return { icon: v.icon ?? v.emoji, name: v.name ?? v.item ?? v.title, desc: v.desc ?? v.description ?? v.note };
+    const toAdd = (fromList) => (v) => {
+        if (typeof v === 'string') return { name: v, fromList };
+        if (v && typeof v === 'object') {
+            const qty = v.qty ?? v.quantity ?? v.count ?? v.amount;
+            return {
+                icon: v.icon ?? v.emoji,
+                name: v.name ?? v.item ?? v.title,
+                desc: v.desc ?? v.description ?? v.note,
+                qty: qty === undefined || qty === null ? undefined : qty,
+                equipped: typeof v.equipped === 'boolean' ? v.equipped : (typeof v.worn === 'boolean' ? v.worn : undefined),
+                effects: v.effects ?? v.bonus ?? v.bonuses ?? v.modifiers,
+                fromList,
+            };
+        }
         return null;
+    };
+    const toRemove = (v) => {
+        const raw = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.name ?? v.item) : null);
+        if (typeof raw !== 'string' || !raw.trim()) return null;
+        const qty = v && typeof v === 'object' ? (v.qty ?? v.quantity ?? v.count ?? v.amount) : undefined;
+        return { name: splitLeadingEmoji(raw).name, qty: qty === undefined || qty === null ? null : qty };
     };
     const toName = (v) => {
         const raw = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.name ?? v.item) : null);
-        return typeof raw === 'string' ? splitLeadingEmoji(raw).name : null;
+        return typeof raw === 'string' && raw.trim() ? splitLeadingEmoji(raw).name : null;
     };
     const arr = (v) => (Array.isArray(v) ? v : (v === undefined || v === null ? [] : [v]));
     const out = [];
     const push = (name, val) => {
         if (typeof name !== 'string' || !name.trim() || !val || typeof val !== 'object') return;
-        if (Array.isArray(val)) val = { add: val };
-        const listed = val.add ?? val.added ?? val.gain ?? val.gained ?? val.items ?? val.inventory ?? val.equipment ?? val.carries ?? val.carried;
-        const add = arr(listed).map(toAdd).filter(a => a && typeof a.name === 'string' && a.name.trim());
-        const remove = arr(val.remove ?? val.removed ?? val.lose).map(toName).filter(n => typeof n === 'string' && n.trim());
-        if (add.length || remove.length) out.push({ name: name.trim(), add, remove });
+        const isList = Array.isArray(val);
+        if (isList) val = { items: val };
+        const explicit = val.add ?? val.added ?? val.gain ?? val.gained;
+        const listed = val.items ?? val.inventory ?? val.equipment ?? val.carries ?? val.carried;
+        const add = [
+            ...arr(explicit).map(toAdd(false)),
+            ...arr(listed).map(toAdd(true)),
+        ].filter(a => a && typeof a.name === 'string' && a.name.trim());
+        const remove = arr(val.remove ?? val.removed ?? val.lose ?? val.lost ?? val.use ?? val.used).map(toRemove).filter(Boolean);
+        const equip = arr(val.equip ?? val.wear ?? val.wield).map(toName).filter(Boolean);
+        const unequip = arr(val.unequip ?? val.stow ?? val.pack ?? val.takeoff).map(toName).filter(Boolean);
+        if (add.length || remove.length || equip.length || unequip.length) out.push({ name: name.trim(), add, remove, equip, unequip });
     };
     if (Array.isArray(data)) {
         for (const item of data) if (item && typeof item === 'object') push(item.name, item);
@@ -140,37 +191,89 @@ export function sameItemName(a, b) {
 }
 
 /**
- * What an AI update does to one character's list.
- * @returns {{ add: object[], remove: object[], blocked: object[] }}
- *   add: new items (not already carried); remove: carried items the AI may
- *   remove; blocked: carried items the AI tried to remove but are locked.
+ * Applies one character's AI change to a COPY of their list.
+ * @param {object[]} list
+ * @param {object} change - one entry of normalizeAIEquipment
+ * @param {(raw: *) => object} [resolveEffects] - raw effects → { statId: n }
+ * @returns {{ list: object[], added: number, removed: number, changed: number, blocked: object[] }}
  */
-export function planEquipmentChange(list, change) {
-    const current = Array.isArray(list) ? list : [];
-    const out = { add: [], remove: [], blocked: [] };
-    const removing = new Set();
-    for (const name of change.remove || []) {
-        const item = findItem(current, name);
-        if (!item || removing.has(item.id)) continue;
-        if (item.aiCanRemove === false) out.blocked.push(item);
-        else { out.remove.push(item); removing.add(item.id); }
-    }
-    const seen = new Set(current.filter(i => !removing.has(i.id)).map(i => itemKey(i.name)));
-    for (const a of change.add || []) {
-        const item = makeItem({ ...a, source: 'ai', aiCanRemove: true });
+export function applyEquipmentChange(list, change, resolveEffects = () => ({})) {
+    const next = (Array.isArray(list) ? list : []).map(i => normalizeItem({ ...i, effects: { ...(i.effects || {}) } }));
+    const res = { list: next, added: 0, removed: 0, changed: 0, blocked: [] };
+    const find = (name) => findItem(next, name);
+    for (const r of change.remove || []) {
+        const item = find(r.name);
         if (!item) continue;
-        const k = itemKey(item.name);
-        if (!k) continue;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        out.add.push(item);
+        if (item.aiCanRemove === false) { res.blocked.push(item); continue; }
+        const q = r.qty === null || r.qty === undefined ? null : Math.round(Number(r.qty));
+        if (q !== null && Number.isFinite(q) && q > 0 && q < item.qty) {
+            item.qty -= q;
+            res.changed++;
+        } else {
+            next.splice(next.indexOf(item), 1);
+            res.removed++;
+        }
     }
-    return out;
+    for (const a of change.add || []) {
+        const existing = find(a.name);
+        if (existing) {
+            // Only an explicit quantity stacks; a re-listed item is left alone.
+            const q = Math.round(Number(a.qty));
+            if (!a.fromList && a.qty !== undefined && Number.isFinite(q) && q > 0) {
+                existing.qty = Math.min(MAX_QTY, existing.qty + q);
+                res.changed++;
+            }
+            if (typeof a.equipped === 'boolean' && existing.equipped !== a.equipped) { existing.equipped = a.equipped; res.changed++; }
+            continue;
+        }
+        if (next.length >= MAX_ITEMS) break;
+        const item = makeItem({
+            icon: a.icon, name: a.name, desc: a.desc,
+            qty: a.qty === undefined ? 1 : a.qty,
+            equipped: a.equipped === true,
+            effects: a.effects === undefined || a.effects === null ? {} : resolveEffects(a.effects),
+            source: 'ai', aiCanRemove: true,
+        });
+        if (!item || !itemKey(item.name)) continue;
+        next.push(item);
+        res.added++;
+    }
+    for (const n of change.equip || []) {
+        const item = find(n);
+        if (item && !item.equipped) { item.equipped = true; res.changed++; }
+    }
+    for (const n of change.unequip || []) {
+        const item = find(n);
+        if (item && item.equipped) { item.equipped = false; res.changed++; }
+    }
+    return res;
 }
 
-/** "🗡️ Iron sword, 🔒🛡️ Oak shield" */
-export function formatItems(list) {
-    return (list || []).map(i => `${i.aiCanRemove === false ? LOCK_MARK : ''}${i.icon || DEFAULT_ICON} ${i.name}`).join(', ');
+/** Effects of the equipped items, as modifier sources. */
+export function equipmentModifierSources(list) {
+    return (list || [])
+        .filter(i => i && i.equipped && i.effects && Object.keys(i.effects).length)
+        .map(i => ({ label: i.name, effects: i.effects }));
+}
+
+/** "🔒🗡️ Iron sword (STR +2), 🧪 Healing potion ×3" */
+export function formatItems(list, formatEffect = null) {
+    return (list || []).map(raw => {
+        const i = normalizeItem({ ...raw });
+        const eff = formatEffect && Object.keys(i.effects).length ? formatEffect(i.effects) : '';
+        return `${i.aiCanRemove === false ? LOCK_MARK : ''}${i.icon || DEFAULT_ICON} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${eff ? ` (${eff})` : ''}`;
+    }).join(', ');
+}
+
+/** "Equipped: …; Backpack: …" */
+export function formatLoadout(list, formatEffect = null) {
+    const items = (list || []).map(i => normalizeItem({ ...i }));
+    const on = items.filter(i => i.equipped);
+    const pack = items.filter(i => !i.equipped);
+    const parts = [];
+    if (on.length) parts.push(`equipped: ${formatItems(on, formatEffect)}`);
+    if (pack.length) parts.push(`backpack: ${formatItems(pack)}`);
+    return parts.join('; ');
 }
 
 /**
@@ -184,14 +287,18 @@ export function formatItems(list) {
 export function buildEquipmentPrompt(entries, { compact = true, standalone = false } = {}) {
     const list = (entries || []).filter(e => e && e.name);
     if (!list.length) return '';
-    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatItems(e.items) : 'nothing listed yet'}`);
+    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatLoadout(e.items, e.formatEffect) : 'nothing listed yet'}`);
     const seed = list.filter(e => e.needsGear).map(e => e.name);
     const player = list.find(e => e.isUser)?.name;
-    const example = JSON.stringify({ equipment: { [list[0].name]: { add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain soldier\'s blade' }], remove: ['Torch'] } } });
+    const example = JSON.stringify({ equipment: { [list[0].name]: {
+        add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain soldier\'s blade', equipped: true, effects: { STR: 1 } }, { icon: '🧪', name: 'Healing potion', qty: 2 }],
+        remove: [{ name: 'Torch' }, { name: 'Healing potion', qty: 1 }],
+        equip: ['Oak shield'], unequip: ['Cloak'],
+    } } });
     const where = standalone ? 'start your reply with ONE JSON code block' : 'add an "equipment" key to the same tracker JSON object';
     let out = compact
-        ? 'EQUIPMENT (what each carries):\n'
-        : 'EQUIPMENT — what each character currently carries or wears:\n';
+        ? 'EQUIPMENT (equipped = worn/in hand; backpack = carried):\n'
+        : 'EQUIPMENT — what each character has equipped (worn or in hand) and in their backpack:\n';
     out += lines.join('\n') + '\n';
     const playerNote = player
         ? (compact
@@ -199,8 +306,8 @@ export function buildEquipmentPrompt(entries, { compact = true, standalone = fal
             : `. This includes anything ${player} takes out, shows or uses in the user's message, even if it was never mentioned before — the user decides what their character carries`)
         : '';
     out += compact
-        ? `Keep the lists true to the story. When someone gains an item (picks up, buys, is given) or is shown already having, wearing or using one that is not listed${playerNote}, or loses one (drops, gives away, breaks, uses up), ${where}: ${example} — one emoji, a short name, a desc under 8 words. ${LOCK_MARK} items can never be removed. Omit the key when nothing changes.`
-        : `EQUIPMENT CHANGES: keep these lists true to the story. Add an item when a character gains it — picks it up, buys it, is given it — or when the story shows them already having, wearing or using something that is not listed yet${playerNote}. Remove an item when they drop it, give it away, break it or use it up. Write the change with ${where}, like ${example}. Each new item has one emoji icon, a short name and a description under 8 words. Remove items by their exact name. Items marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
+        ? `Keep the lists true to the story. When someone gains an item (picks up, buys, is given) or is shown already having, wearing or using one that is not listed${playerNote}, or loses or uses up one, or puts one on / away, ${where}: ${example}. One emoji, a short name, a desc under 8 words; "qty" for stacks (remove with "qty" to use some up); "equipped": true for what is worn or held; "effects" only for real attribute bonuses (e.g. {"STR": 1}), applied while equipped — never change attributes yourself for them. ${LOCK_MARK} items can never be removed. Omit the key when nothing changes.`
+        : `EQUIPMENT CHANGES: keep these lists true to the story. Add an item when a character gains it — picks it up, buys it, is given it — or when the story shows them already having, wearing or using something that is not listed yet${playerNote}. Remove an item when they drop it, give it away, break it or use it up; for stacks, remove with a "qty" to use up only some. Use "equip" when they put something on or take it in hand and "unequip" when they put it away in the backpack. Write the change with ${where}, like ${example}. Each new item has one emoji icon, a short name, a description under 8 words, "qty" when there are several, "equipped": true if it is worn or held, and "effects" only for genuine attribute bonuses or maluses (e.g. {"STR": 1}) — DES applies them automatically while the item is equipped, so never raise or lower attributes yourself because of an item. Items marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
     if (seed.length) {
         out += compact
             ? `\nSTARTING GEAR: add what ${seed.join(', ')} already ${seed.length === 1 ? 'carries' : 'carry'} and ${seed.length === 1 ? 'wears' : 'wear'} now, from their description and the scene (a few key items).`

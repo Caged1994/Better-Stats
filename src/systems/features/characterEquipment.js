@@ -24,16 +24,20 @@ import { extensionSettings } from '../../core/state.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_ITEMS,
+    MAX_QTY,
     makeItem,
     findItem,
+    normalizeItem,
     normalizeAIEquipment,
-    planEquipmentChange,
+    applyEquipmentChange,
     buildEquipmentPrompt,
-    formatItems,
+    formatLoadout,
 } from '../../utils/equipmentModel.js';
+import { parseEffects, formatEffects } from '../../utils/effectsModel.js';
 import {
     currentCampaignKey,
     getStatCharacters,
+    getStatSheet,
     statKey,
     notifyStatsChanged,
     PLAYER_WORDS,
@@ -83,10 +87,22 @@ function listByKey(key, create = false) {
     return b[key];
 }
 
-/** The character's items in the active campaign (live array). */
+/** The character's items in the active campaign (live array; old items get qty/equipped/effects). */
 export function getEquipment(name, isUser = false) {
     const list = listByKey(statKey(name, isUser));
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    for (const i of list) normalizeItem(i);
+    return list;
+}
+
+/** Raw effects (object or "STR +2") → { statId: n } for this character's attributes. */
+export function resolveEffectsFor(name, isUser, raw) {
+    return parseEffects(raw, getStatSheet(name, isUser));
+}
+
+/** "STR +2, DEX −1" for this character. */
+export function describeEffects(name, isUser, effects) {
+    return formatEffects(effects, getStatSheet(name, isUser));
 }
 
 function changed(detail) {
@@ -96,7 +112,8 @@ function changed(detail) {
 
 /** Adds an item by hand. Returns the item or { error }. */
 export function addItem(name, isUser, input) {
-    const item = makeItem({ ...input, source: 'user' });
+    const effects = input && input.effects !== undefined ? resolveEffectsFor(name, isUser, input.effects) : {};
+    const item = makeItem({ ...input, effects, source: 'user' });
     if (!item) return { error: 'Give the item a name.' };
     const list = listByKey(statKey(name, isUser), true);
     if (findItem(list, item.name)) return { error: `${name} already has "${item.name}".` };
@@ -113,6 +130,15 @@ export function updateItem(name, isUser, id, changes = {}) {
     if (typeof changes.desc === 'string') item.desc = changes.desc.trim().slice(0, 120);
     if (typeof changes.icon === 'string' && changes.icon.trim()) item.icon = makeItem({ name: 'x', icon: changes.icon }).icon;
     if (typeof changes.name === 'string' && changes.name.trim()) item.name = changes.name.trim().slice(0, 40);
+    if (typeof changes.equipped === 'boolean') item.equipped = changes.equipped;
+    if (changes.qty !== undefined) {
+        const q = Math.round(Number(changes.qty));
+        if (Number.isFinite(q)) {
+            if (q <= 0) return removeItem(name, isUser, id);
+            item.qty = Math.min(MAX_QTY, q);
+        }
+    }
+    if (changes.effects !== undefined) item.effects = resolveEffectsFor(name, isUser, changes.effects);
     changed({ name });
     return true;
 }
@@ -218,6 +244,7 @@ export function buildEquipmentPromptForGeneration({ compact = true, standalone =
         isUser,
         items: getEquipment(name, isUser),
         needsGear: needsStartingGear(name, isUser),
+        formatEffect: (eff) => describeEffects(name, isUser, eff),
     }));
     return buildEquipmentPrompt(entries, { compact, standalone });
 }
@@ -225,16 +252,16 @@ export function buildEquipmentPromptForGeneration({ compact = true, standalone =
 export function buildEquipmentContextSummary() {
     if (!isEquipmentEnabled()) return '';
     const lines = getStatCharacters()
-        .map(({ name, isUser }) => ({ name, items: getEquipment(name, isUser) }))
+        .map(({ name, isUser }) => ({ name, isUser, items: getEquipment(name, isUser) }))
         .filter(e => e.items.length)
-        .map(e => `${e.name} carries: ${formatItems(e.items)}`);
+        .map(e => `${e.name} — ${formatLoadout(e.items, (eff) => describeEffects(e.name, e.isUser, eff))}`);
     return lines.length ? 'Equipment:\n' + lines.join('\n') : '';
 }
 
 // ─── Applying the AI's update ───────────────────────────────────────────────
 
 /** Maps a name the AI used to a storage key (persona, alias, scene, or as given). */
-function resolveTarget(name) {
+export function resolveTarget(name) {
     const lower = String(name).trim().toLowerCase();
     if (!lower) return null;
     let userName = '';
@@ -270,13 +297,15 @@ function resolveTarget(name) {
 
 /**
  * Applies the AI's equipment changes for a fresh reply.
- * @returns {{added: number, removed: number, blocked: Array<{name: string, item: string}>}}
+ * Undo keeps a snapshot of every list the reply touched (before and after):
+ * a swipe restores "before" only where the list still equals "after", so an
+ * edit the user made since is never thrown away.
+ * @returns {{added: number, removed: number, changed: number, blocked: Array<{name: string, item: string}>}}
  */
 export function applyAIEquipment(raw, messageIndex) {
-    const result = { added: 0, removed: 0, blocked: [] };
+    const result = { added: 0, removed: 0, changed: 0, blocked: [] };
     if (!isEquipmentEnabled() || raw === null || raw === undefined) return result;
-    const undoAdded = [];
-    const undoRemoved = [];
+    const snapshots = [];
     // The characters this reply was asked to give starting gear to: asked
     // once, so they are marked as done whatever the reply contained.
     const asked = getStatCharacters()
@@ -286,24 +315,21 @@ export function applyAIEquipment(raw, messageIndex) {
         const target = resolveTarget(change.name);
         if (!target) continue;
         const key = statKey(target.name, target.isUser);
-        const list = listByKey(key, true);
-        const plan = planEquipmentChange(list, change);
-        for (const item of plan.remove) {
-            const i = list.findIndex(x => x.id === item.id);
-            if (i === -1) continue;
-            list.splice(i, 1);
-            undoRemoved.push({ key, item, index: i });
-            result.removed++;
-        }
-        for (const item of plan.add) {
-            if (list.length >= MAX_ITEMS) break;
-            list.push(item);
-            undoAdded.push({ key, id: item.id });
-            result.added++;
-        }
-        for (const item of plan.blocked) result.blocked.push({ name: target.name, item: item.name });
+        const live = listByKey(key, true);
+        for (const i of live) normalizeItem(i);
+        const before = JSON.parse(JSON.stringify(live));
+        const res = applyEquipmentChange(live, change, (rawEff) => resolveEffectsFor(target.name, target.isUser, rawEff));
+        for (const item of res.blocked) result.blocked.push({ name: target.name, item: item.name });
+        if (!res.added && !res.removed && !res.changed) continue;
+        live.splice(0, live.length, ...res.list);
+        result.added += res.added;
+        result.removed += res.removed;
+        result.changed += res.changed;
+        const prevSnap = snapshots.find(x => x.key === key);
+        if (prevSnap) prevSnap.after = JSON.parse(JSON.stringify(live));
+        else snapshots.push({ key, before, after: JSON.parse(JSON.stringify(live)) });
     }
-    console.log(`[Dooms Tracker] Equipment: ${result.added} added, ${result.removed} removed${result.blocked.length ? `, ${result.blocked.length} locked kept` : ''}`);
+    console.log(`[Dooms Tracker] Equipment: ${result.added} added, ${result.removed} removed, ${result.changed} changed${result.blocked.length ? `, ${result.blocked.length} locked kept` : ''}`);
     if (asked.length) {
         const sb = seededBucket(true);
         for (const a of asked) {
@@ -311,18 +337,27 @@ export function applyAIEquipment(raw, messageIndex) {
             sb[k !== undefined ? k : a.key] = true;
         }
     }
-    if (!result.added && !result.removed && !asked.length) return result;
+    if (!snapshots.length && !asked.length) return result;
     const campaign = currentCampaignKey();
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
             const prev = chat_metadata.dooms_tracker.equipmentUndo;
             const same = prev && prev.messageIndex === messageIndex && prev.campaign === campaign;
+            let snaps = snapshots;
+            if (same && Array.isArray(prev.snapshots)) {
+                // A Refresh of the same reply: keep the oldest "before".
+                snaps = prev.snapshots.map(p => ({ ...p }));
+                for (const sn of snapshots) {
+                    const old = snaps.find(x => x.key === sn.key);
+                    if (old) old.after = sn.after;
+                    else snaps.push(sn);
+                }
+            }
             chat_metadata.dooms_tracker.equipmentUndo = {
                 messageIndex,
                 campaign,
-                added: same ? [...prev.added, ...undoAdded] : undoAdded,
-                removed: same ? [...prev.removed, ...undoRemoved] : undoRemoved,
+                snapshots: snaps,
                 seeded: same ? [...(prev.seeded || []), ...asked] : asked,
             };
         }
@@ -342,16 +377,11 @@ export function revertAIEquipmentForReplacedMessage(replacedIndex) {
         delete chat_metadata.dooms_tracker.equipmentUndo;
         if (rec.campaign !== currentCampaignKey()) return 0;
         let n = 0;
-        for (const { key, id } of rec.added || []) {
-            const list = listByKey(key);
-            const i = list ? list.findIndex(x => x.id === id) : -1;
-            if (i !== -1) { list.splice(i, 1); n++; }
-        }
-        // Put removed items back where they were (unless the user re-added one).
-        for (const { key, item, index } of [...(rec.removed || [])].reverse()) {
-            const list = listByKey(key, true);
-            if (list.some(x => x.id === item.id) || findItem(list, item.name)) continue;
-            list.splice(Math.min(index, list.length), 0, item);
+        for (const { key, before, after } of rec.snapshots || []) {
+            const live = listByKey(key, true);
+            // Only where nothing changed since the AI's update.
+            if (JSON.stringify(live) !== JSON.stringify(after)) continue;
+            live.splice(0, live.length, ...JSON.parse(JSON.stringify(before)));
             n++;
         }
         // The replaced reply was the one asked for starting gear: ask again.

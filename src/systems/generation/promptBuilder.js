@@ -17,6 +17,9 @@ import { applyLocks } from './lockManager.js';
 import { buildStatsPromptForGeneration, buildStatsContextSummary, getStatsExampleObject } from '../features/characterStats.js';
 import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary, isMemoriesEnabled } from '../features/characterMemories.js';
 import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary, isEquipmentEnabled } from '../features/characterEquipment.js';
+import { buildConditionsPromptForGeneration, buildConditionsContextSummary, isConditionsEnabled } from '../features/characterConditions.js';
+// Registers the attribute-modifier provider the stats prompt uses.
+import '../features/characterModifiers.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -153,6 +156,7 @@ export function generateTrackerExample() {
             if (stats) parts.push(`  "stats": ${JSON.stringify(stats)}`);
             if (isEquipmentEnabled()) parts.push('  "equipment": {}');
             if (isMemoriesEnabled()) parts.push('  "memories": {}');
+            if (isConditionsEnabled()) parts.push('  "conditions": {}');
         } catch (e) { /* the example is best-effort */ }
     }
     // If we have JSON parts, wrap them in unified structure
@@ -323,6 +327,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // Character Equipment: what everyone carries, and how to change it.
         const equipmentSection = buildEquipmentPromptForGeneration({ compact });
         if (equipmentSection) instructions += '\n\n' + equipmentSection;
+        // Character Conditions: temporary states, and how to change them.
+        const conditionsSection = buildConditionsPromptForGeneration({ compact });
+        if (conditionsSection) instructions += '\n\n' + conditionsSection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -341,8 +348,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // With stats asking for their own block, memories join it; alone they ask for one.
         const memoriesSection = buildMemoriesPromptForGeneration({ compact, standalone: !statsSection });
         const equipmentSection = buildEquipmentPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection });
-        if (statsSection || memoriesSection || equipmentSection) {
-            instructions += '\n' + [statsSection, memoriesSection, equipmentSection].filter(Boolean).join('\n\n');
+        const conditionsSection = buildConditionsPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection });
+        if (statsSection || memoriesSection || equipmentSection || conditionsSection) {
+            instructions += '\n' + [statsSection, memoriesSection, equipmentSection, conditionsSection].filter(Boolean).join('\n\n');
             if (includeContinuation) {
                 instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
             }
@@ -797,6 +805,8 @@ export function generateContextualSummary() {
         if (memories) summary += memories + '\n';
         const equipment = buildEquipmentContextSummary();
         if (equipment) summary += equipment + '\n';
+        const conditions = buildConditionsContextSummary();
+        if (conditions) summary += conditions + '\n';
     } catch (e) {
         console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }

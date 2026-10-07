@@ -39,6 +39,7 @@ import { applyCharacterAliases } from '../features/characterAliases.js';
 import { applyAIStatUpdates, revertAIStatsForReplacedMessage } from '../features/characterStats.js';
 import { applyAIMemories, revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
 import { applyAIEquipment, revertAIEquipmentForReplacedMessage, notifyBlockedRemovals } from '../features/characterEquipment.js';
+import { applyAIConditions, revertAIConditionsForReplacedMessage } from '../features/characterConditions.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -232,7 +233,15 @@ export async function onMessageReceived(data) {
             // System Log so a missing update can be told apart from a
             // reply that never contained one.
             if (isAwaitingNewMessage) {
-                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, memories: ${parsedData.memories || 'no'}`);
+                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            }
+            // Character Conditions: same rule.
+            if (parsedData.conditions && isAwaitingNewMessage) {
+                try {
+                    applyAIConditions(parsedData.conditions, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Conditions: applying AI update failed', e);
+                }
             }
             // Character Equipment: same rule.
             if (parsedData.equipment && isAwaitingNewMessage) {
@@ -492,6 +501,7 @@ export function onMessageSwiped(messageIndex) {
         try { revertAIStatsForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIMemoriesForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIEquipmentForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIConditionsForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

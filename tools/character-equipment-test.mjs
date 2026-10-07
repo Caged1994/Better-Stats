@@ -78,12 +78,30 @@ check('letters fall back to the box', M.cleanIcon('abc') === M.DEFAULT_ICON && M
 check('names and descriptions are capped', M.makeItem({ name: 'x'.repeat(99), desc: 'y'.repeat(999) }).name.length <= 40 && M.makeItem({ name: 'a', desc: 'y'.repeat(999) }).desc.length <= 120);
 check('no name, no item', M.makeItem({ name: '  ' }) === null);
 const norm = M.normalizeAIEquipment({ Elena: { add: [{ icon: '🗡️', name: 'Sword', desc: 'Sharp' }, 'Rope'], remove: 'Torch' } });
-check('AI shapes are normalised', norm[0].add.length === 2 && norm[0].remove[0] === 'Torch');
+check('AI shapes are normalised', norm[0].add.length === 2 && norm[0].remove[0].name === 'Torch');
 const cur = [{ id: 'a', name: 'Torch', aiCanRemove: true }, { id: 'b', name: "Father's sword", aiCanRemove: false }];
-const plan = M.planEquipmentChange(cur, { add: [{ name: 'torch' }, { name: 'Map' }], remove: ['TORCH', "father's sword", 'Ghost'] });
-check('unlocked items can be removed by the AI', plan.remove.length === 1 && plan.remove[0].id === 'a');
+const plan = M.applyEquipmentChange(cur, { add: [{ name: 'torch' }, { name: 'Map' }], remove: [{ name: 'TORCH' }, { name: "father's sword" }, { name: 'Ghost' }] });
+check('unlocked items can be removed by the AI', !plan.list.some(i => i.id === 'a') && plan.removed === 1);
 check('locked items are blocked', plan.blocked.length === 1 && plan.blocked[0].id === 'b');
-check('an item removed in the same update can come back; existing ones are not doubled', plan.add.map(i => i.name).join() === 'torch,Map');
+check('an item removed in the same update can come back; existing ones are not doubled', plan.list.map(i => i.name).join() === "Father's sword,torch,Map");
+check('the input list is not modified', cur.length === 2);
+// quantities, equipped, effects
+const stack = M.applyEquipmentChange([{ id: 'p', name: 'Healing potion', qty: 3, aiCanRemove: true }], {
+    add: [{ name: 'Healing potion', qty: 2 }, { name: 'Iron sword', equipped: true, effects: 'STR +2' }],
+    remove: [{ name: 'Healing potion', qty: 1 }], equip: [], unequip: [],
+}, (raw) => ({ str: 2 }));
+const pot = stack.list.find(i => i.name === 'Healing potion');
+check('a qty removal uses some up, an explicit qty add stacks', pot.qty === 4);
+check('a new item can arrive equipped with effects', stack.list.find(i => i.name === 'Iron sword').equipped === true && stack.list.find(i => i.name === 'Iron sword').effects.str === 2);
+const relisted = M.applyEquipmentChange([{ id: 'p', name: 'Healing potion', qty: 3 }], { add: [{ name: 'Healing potion', fromList: true }] });
+check('a re-listed item does not stack', relisted.list[0].qty === 3 && relisted.changed === 0);
+const used = M.applyEquipmentChange([{ id: 'p', name: 'Healing potion', qty: 2, aiCanRemove: true }], { remove: [{ name: 'Healing potion', qty: 5 }] });
+check('using up more than there is removes the stack', used.list.length === 0);
+const eq = M.applyEquipmentChange([{ id: 's', name: 'Oak shield' }, { id: 'c', name: 'Cloak', equipped: true }], { equip: ['oak shield'], unequip: ['Cloak'] });
+check('equip / unequip move items between equipped and backpack', eq.list[0].equipped === true && eq.list[1].equipped === false);
+const nested = M.normalizeAIEquipment({ Mastera: { add: [{ name: 'Potion', quantity: 3, worn: false, bonus: { STR: 1 } }], remove: [{ name: 'Potion', qty: 1 }], wield: ['Axe'], stow: 'Bow' } });
+check('alternative field names are understood', nested[0].add[0].qty === 3 && nested[0].add[0].effects.STR === 1 && nested[0].equip[0] === 'Axe' && nested[0].unequip[0] === 'Bow' && nested[0].remove[0].qty === 1);
+check('the loadout separates equipped and backpack', M.formatLoadout([{ name: 'Sword', icon: '🗡️', equipped: true, effects: { str: 2 } }, { name: 'Potion', icon: '🧪', qty: 3 }], () => 'STR +2') === 'equipped: 🗡️ Sword (STR +2); backpack: 🧪 Potion ×3');
 
 // ── 2. Storage per campaign ──
 const sword = Eq.addItem('Mastera', true, { icon: '🗡️', name: "Father's sword", desc: 'Old but sharp', aiCanRemove: false });
@@ -98,14 +116,14 @@ check('persona and NPC lists are separate', Eq.getEquipment('Mastera', false).le
 
 // ── 3. Prompt ──
 const instr = pb.generateTrackerInstructions(false, false);
-check('current equipment is sent, locked items marked', instr.includes('- Mastera (player character): 🔒🗡️ Father\'s sword, 🔦 Torch'));
+check('current equipment is sent, locked items marked', instr.includes('- Mastera (player character): backpack: 🔒🗡️ Father\'s sword, 🔦 Torch'));
 check('NPCs with nothing are listed too', instr.includes('- Elena: nothing listed yet'));
 check('the AI is told how to change equipment', instr.includes('"equipment"') && instr.includes('can never be removed'));
 check('a character with an empty list is asked for starting gear', /STARTING GEAR: add what Elena already carries/.test(instr));
 check('...but not one that already has items', !/STARTING GEAR: add what [^\n]*Mastera/.test(instr));
 check('items the player takes out are to be added', instr.includes("anything Mastera takes out or uses in the user's message"));
 check('items shown being used are to be added', instr.includes('is shown already having, wearing or using one that is not listed'));
-check('separate-mode context lists equipment', pb.generateContextualSummary().includes('Mastera carries:'));
+check('separate-mode context lists equipment', pb.generateContextualSummary().includes('Mastera — backpack:'));
 Eq.setEquipmentEnabled(false);
 check('switched off: nothing is sent', !pb.generateTrackerInstructions(false, false).includes('EQUIPMENT'));
 Eq.setEquipmentEnabled(true);
@@ -121,7 +139,7 @@ check('items added and removed', res.added === 2 && res.removed === 1, JSON.stri
 check('the locked item stays and is reported', Eq.getEquipment('Mastera', true).some(i => i.name === "Father's sword") && res.blocked.length === 1);
 check('aliases resolve to the card name', Eq.getEquipment('Elena').some(i => i.name === 'Longbow'));
 check('the torch is gone, the map is there', !Eq.getEquipment('Mastera', true).some(i => i.name === 'Torch') && Eq.getEquipment('Mastera', true).some(i => i.name === 'Old map' && i.icon === '🗺️'));
-check('swipe undoes it', Eq.revertAIEquipmentForReplacedMessage(1) === 3
+check('swipe undoes it', Eq.revertAIEquipmentForReplacedMessage(1) === 2
     && Eq.getEquipment('Mastera', true).map(i => i.name).join() === "Father's sword,Torch" && Eq.getEquipment('Elena').length === 0);
 check('...once', Eq.revertAIEquipmentForReplacedMessage(1) === 0);
 

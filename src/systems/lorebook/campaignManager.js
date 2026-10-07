@@ -30,6 +30,7 @@ import {
 import { deleteCampaignStatValues, notifyStatsChanged } from '../features/characterStats.js';
 import { deleteCampaignMemories, notifyMemoriesChanged } from '../features/characterMemories.js';
 import { deleteCampaignEquipment } from '../features/characterEquipment.js';
+import { deleteCampaignConditions } from '../features/characterConditions.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ export async function deleteCampaign(id) {
     deleteCampaignStatValues(id);
     deleteCampaignMemories(id);
     deleteCampaignEquipment(id);
+    deleteCampaignConditions(id);
 
     delete extensionSettings.lorebook.campaigns[id];
 

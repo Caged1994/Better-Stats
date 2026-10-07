@@ -395,6 +395,7 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
 
     const payload = {};
     const fixedLines = [];
+    const bonusLines = [];
     const describe = new Map(); // description key -> line
     const toGenerate = [];
     let hasAttributes = false;
@@ -419,18 +420,29 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
             payload[e.displayName] = values;
             continue;
         }
+        const mods = e.modifiers || {};
+        const bonus = [];
         for (const s of e.stats) {
             const v = e.current?.[s.id] ?? s.base;
             if (s.kind === 'attribute') hasAttributes = true;
+            const m = s.kind === 'attribute' ? (mods[s.id]?.total || 0) : 0;
+            if (m) {
+                const from = (mods[s.id].parts || []).map(p => p.label).join(', ');
+                bonus.push(`${s.abbr || s.name} ${m > 0 ? '+' : '−'}${Math.abs(m)}${from ? ` (${from})` : ''}`);
+            }
             if (s.ai) {
                 values[s.name] = v;
                 addDescription(e, s);
+            } else if (m) {
+                const eff = clampStatValue(s, v + m);
+                fixed.push(`${s.name} ${eff} (${v} ${m > 0 ? '+' : '−'} ${Math.abs(m)})`);
             } else {
                 fixed.push(`${s.name} ${v}${s.kind === 'state' ? '%' : ''}`);
             }
         }
         if (Object.keys(values).length) payload[e.displayName] = values;
         if (fixed.length) fixedLines.push(`- ${e.displayName}${e.isUser ? ' (player character)' : ''}: ${fixed.join(', ')}`);
+        if (bonus.length) bonusLines.push(`- ${e.displayName}: ${bonus.join(', ')}`);
     }
 
     let out = '';
@@ -466,6 +478,13 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
             : 'Fixed stats — read-only. Do NOT output them, but let them shape what each character is capable of and how they act:\n';
         out += fixedLines.join('\n');
         if (hasAttributes && !Object.keys(payload).length) out += '\n' + attributeScaleLine(compact);
+    }
+    if (bonusLines.length) {
+        out += (out ? '\n' : '');
+        out += compact
+            ? 'Attribute bonuses in effect (from equipped items and conditions; already counted — never add them to the values yourself):\n'
+            : 'Attribute bonuses and maluses in effect right now, from equipped items and conditions. DES adds them automatically on top of the values above — never fold them into the attributes yourself:\n';
+        out += bonusLines.join('\n');
     }
     return out.trim();
 }

@@ -28,8 +28,11 @@ import {
     getPersonaName,
 } from '../features/characterStats.js';
 import { getCharacterList, resolveActiveUserName, resolvePortrait } from './portraitBar.js';
-import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled, needsStartingGear, requestStartingGear, cancelStartingGear } from '../features/characterEquipment.js';
-import { ITEM_EMOJI, DEFAULT_ICON } from '../../utils/equipmentModel.js';
+import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled, needsStartingGear, requestStartingGear, cancelStartingGear, describeEffects } from '../features/characterEquipment.js';
+import { getConditions, addCondition, removeCondition, isConditionsEnabled } from '../features/characterConditions.js';
+import { getEffectiveStatValues } from '../features/characterModifiers.js';
+import { ITEM_EMOJI, DEFAULT_ICON, normalizeItem } from '../../utils/equipmentModel.js';
+import { CONDITION_EMOJI, DEFAULT_CONDITION_ICON } from '../../utils/conditionModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
 const POPOUT_NAME = 'dooms-stats-popout';
@@ -40,8 +43,11 @@ let selected = null;          // { name, isUser }
 let popoutWin = null;         // Window | null
 let listenersBound = false;
 let pendingRender = false;    // a repaint skipped while a value was being typed
-// The "Add item" form survives repaints (an AI update can land while typing).
-const itemForm = { open: false, icon: '', name: '', desc: '', aiCanRemove: true, error: '' };
+// The "Add item" / "Add condition" form survives repaints (an AI update can
+// land while typing). kind: 'item' | 'condition'; only one is open at a time.
+const FORM_DEFAULTS = { open: false, kind: 'item', icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, error: '' };
+const itemForm = { ...FORM_DEFAULTS };
+function resetForm() { Object.assign(itemForm, FORM_DEFAULTS); }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -162,9 +168,11 @@ function attrTier(value) {
     return { cls: '', label: value === HUMAN_AVERAGE ? 'average' : 'above average' };
 }
 
-function attrHtml(stat, value) {
+function attrHtml(stat, base, value = base, mod = null) {
     const tier = attrTier(value);
-    const tip = `${stat.name} ${value} (${tier.label})${stat.description ? ` — ${stat.description}` : ''}`;
+    const total = mod?.total || 0;
+    const from = total ? (mod.parts || []).map(p => `${p.label} ${p.value > 0 ? '+' : '−'}${Math.abs(p.value)}`).join(', ') : '';
+    const tip = `${stat.name} ${value} (${tier.label})${total ? ` = ${base} base, ${from}` : ''}${stat.description ? ` — ${stat.description}` : ''}`;
     // The bar fills at the human peak; superhuman values glow instead.
     const width = Math.max(3, Math.min(100, (value / HUMAN_PEAK) * 100));
     return `
@@ -173,7 +181,10 @@ function attrHtml(stat, value) {
                 <span class="dsp-attr-abbr">${escapeHtml(stat.abbr || stat.name)}</span>
                 ${aiBadge(stat)}
             </div>
-            <button type="button" class="dsp-value dsp-attr-value" data-stat="${escapeHtml(stat.id)}" title="Click to edit">${value}</button>
+            <div class="dsp-attr-line">
+                <button type="button" class="dsp-value dsp-attr-value" data-stat="${escapeHtml(stat.id)}" title="${total ? `Base ${base} — click to edit the base value` : 'Click to edit'}">${value}</button>
+                ${total ? `<span class="dsp-mod ${total > 0 ? 'is-up' : 'is-down'}" title="${escapeHtml(from)}">${total > 0 ? '+' : '−'}${Math.abs(total)}</span>` : ''}
+            </div>
             <div class="dsp-attr-bar"><span style="width:${width.toFixed(1)}%"></span></div>
             ${stat.abbr ? `<span class="dsp-attr-name">${escapeHtml(stat.name)}</span>` : ''}
         </div>`;
@@ -214,6 +225,7 @@ function buildHtml({ popout }) {
     // Stats switched off in Settings are not shown.
     const stats = activeStats(getStatSheet(selected.name, selected.isUser));
     const cur = getCurrentStatValues(selected.name, selected.isUser, stats);
+    const eff = getEffectiveStatValues(selected.name, selected.isUser, stats);
     const states = stats.filter(s => s.kind === 'state');
     const attrs = stats.filter(s => s.kind === 'attribute');
 
@@ -234,13 +246,14 @@ function buildHtml({ popout }) {
             ${isStatGenerationPending(selected.name, selected.isUser) ? `
             <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
+            ${isConditionsEnabled() ? conditionsHtml() : ''}
             ${states.length ? `<section class="dsp-section">
                 <h3 class="dsp-section-title">Stats</h3>
                 <div class="dsp-rings">${states.map(s => ringHtml(s, cur[s.id])).join('')}</div>
             </section>` : ''}
             ${attrs.length ? `<section class="dsp-section">
                 <h3 class="dsp-section-title">Attributes <span class="dsp-scale">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak</span></h3>
-                <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id])).join('')}</div>
+                <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id], eff.values[s.id], eff.modifiers[s.id])).join('')}</div>
             </section>` : ''}
             ${!states.length && !attrs.length ? '<div class="dsp-empty">Every stat is switched off in Settings → Stats.</div>' : ''}
             ${isEquipmentEnabled() ? equipmentHtml() : ''}
@@ -250,13 +263,30 @@ function buildHtml({ popout }) {
 
 // ─── Equipment ──────────────────────────────────────────────────────────────
 
-function itemHtml(item) {
+function effectText(effects) {
+    return effects && Object.keys(effects).length ? describeEffects(selected.name, selected.isUser, effects) : '';
+}
+
+function itemHtml(raw) {
+    const item = normalizeItem({ ...raw });
     const locked = item.aiCanRemove === false;
-    const tip = item.desc ? `${item.name} — ${item.desc}` : item.name;
+    const eff = effectText(item.effects);
+    const tip = [item.name + (item.qty > 1 ? ` ×${item.qty}` : ''), item.desc, eff && `${eff}${item.equipped ? '' : ' (when equipped)'}`].filter(Boolean).join(' — ');
     return `
-        <div class="dsp-item${locked ? ' is-locked' : ''}" data-id="${escapeHtml(item.id)}" data-tip="${escapeHtml(tip)}">
-            <span class="dsp-item-icon" tabindex="0" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${escapeHtml(item.icon || DEFAULT_ICON)}</span>
-            <span class="dsp-item-name">${escapeHtml(item.name)}</span>
+        <div class="dsp-item${locked ? ' is-locked' : ''}${item.equipped ? ' is-equipped' : ''}" data-id="${escapeHtml(item.id)}" data-tip="${escapeHtml(tip)}">
+            <span class="dsp-item-icon" tabindex="0" aria-label="${escapeHtml(tip)}">${escapeHtml(item.icon || DEFAULT_ICON)}</span>
+            <span class="dsp-item-main">
+                <span class="dsp-item-name">${escapeHtml(item.name)}</span>
+                ${eff ? `<span class="dsp-item-eff${item.equipped ? '' : ' is-idle'}">${escapeHtml(eff)}</span>` : ''}
+            </span>
+            <span class="dsp-qty" title="Quantity">
+                <button type="button" class="dsp-qty-btn" data-qty="-1" title="One less">−</button>
+                <span class="dsp-qty-n">${item.qty}</span>
+                <button type="button" class="dsp-qty-btn" data-qty="1" title="One more">+</button>
+            </span>
+            <button type="button" class="dsp-item-equip" aria-pressed="${item.equipped}"
+                title="${item.equipped ? 'Equipped — click to put it in the backpack' : 'In the backpack — click to equip it'}">
+                <i class="fa-solid ${item.equipped ? 'fa-hand-fist' : 'fa-box-archive'}"></i></button>
             <button type="button" class="dsp-item-lock" aria-pressed="${locked}"
                 title="${locked ? 'Locked: the AI cannot remove it. Click to let the AI remove it' : 'The AI can remove it. Click to lock it'}">
                 <i class="fa-solid ${locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
@@ -264,50 +294,97 @@ function itemHtml(item) {
         </div>`;
 }
 
-function equipmentHtml() {
-    const items = getEquipment(selected.name, selected.isUser);
+function formHtml(kind) {
     const f = itemForm;
-    const form = f.open ? `
+    if (!f.open || f.kind !== kind) return '';
+    const isItem = kind === 'item';
+    const emoji = isItem ? ITEM_EMOJI : CONDITION_EMOJI;
+    return `
         <div class="dsp-item-form">
             <div class="dsp-item-form-row">
-                <input type="text" class="dsp-item-in-icon" data-field="icon" value="${escapeHtml(f.icon)}" placeholder="${DEFAULT_ICON}" maxlength="8" aria-label="Icon (emoji)">
-                <input type="text" class="dsp-item-in-name" data-field="name" value="${escapeHtml(f.name)}" placeholder="Name" maxlength="40" aria-label="Item name">
+                <input type="text" class="dsp-item-in-icon" data-field="icon" value="${escapeHtml(f.icon)}" placeholder="${isItem ? DEFAULT_ICON : DEFAULT_CONDITION_ICON}" maxlength="8" aria-label="Icon (emoji)">
+                <input type="text" class="dsp-item-in-name" data-field="name" value="${escapeHtml(f.name)}" placeholder="${isItem ? 'Item name' : 'Condition (e.g. Poisoned)'}" maxlength="40" aria-label="Name">
+                ${isItem ? `<input type="number" class="dsp-item-in-qty" data-field="qty" value="${escapeHtml(f.qty)}" min="1" max="999" step="1" aria-label="Quantity" title="Quantity">` : ''}
             </div>
             <div class="dsp-emoji-grid" role="listbox" aria-label="Pick an icon">
-                ${ITEM_EMOJI.map(e => `<button type="button" class="dsp-emoji${f.icon === e ? ' is-on' : ''}" data-emoji="${escapeHtml(e)}">${e}</button>`).join('')}
+                ${emoji.map(e => `<button type="button" class="dsp-emoji${f.icon === e ? ' is-on' : ''}" data-emoji="${escapeHtml(e)}">${e}</button>`).join('')}
             </div>
             <input type="text" class="dsp-item-in-desc" data-field="desc" value="${escapeHtml(f.desc)}" placeholder="Very short description (shown on hover)" maxlength="120" aria-label="Description">
+            <input type="text" class="dsp-item-in-eff" data-field="effects" value="${escapeHtml(f.effects)}" placeholder="${isItem ? 'Effects while equipped, e.g. STR +2, DEX -1 (optional)' : 'Effects while it lasts, e.g. DEX -3 (optional)'}" maxlength="80" aria-label="Effects">
             <div class="dsp-item-form-row">
-                <label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> The AI can remove it</label>
+                ${isItem ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-equipped" ${f.equipped ? 'checked' : ''}> Equipped</label>
+                <label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> AI can remove</label>` : ''}
                 <span class="dsp-item-error" role="alert">${escapeHtml(f.error)}</span>
                 <button type="button" class="dsp-text-btn" data-action="item-cancel">Cancel</button>
                 <button type="button" class="dsp-text-btn is-primary" data-action="item-add">Add</button>
             </div>
-        </div>` : '';
+        </div>`;
+}
+
+function equipmentHtml() {
+    const items = getEquipment(selected.name, selected.isUser);
+    const f = itemForm;
+    const on = items.filter(i => i.equipped);
+    const pack = items.filter(i => !i.equipped);
     const seeding = needsStartingGear(selected.name, selected.isUser);
     const seedNote = seeding
         ? `<div class="dsp-gear-note"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 <span>In its next reply the AI will add what ${escapeHtml(selected.name)} already carries, from ${selected.isUser ? 'your persona description' : 'their description'} and the scene.</span>
                 <button type="button" class="dsp-text-btn" data-action="gear-cancel" title="Don't ask">Cancel</button></div>`
         : '';
+    const formOpen = f.open && f.kind === 'item';
     return `
         <section class="dsp-section dsp-equip">
             <h3 class="dsp-section-title">Equipment <span class="dsp-scale">${items.length || ''}</span>
                 ${seeding ? '' : '<button type="button" class="dsp-text-btn dsp-item-new dsp-gear-btn" data-action="gear-request" title="Ask the AI, in its next reply, to add what this character already carries"><i class="fa-solid fa-wand-magic-sparkles"></i> Starting gear</button>'}
-                ${f.open ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open"><i class="fa-solid fa-plus"></i> Add item</button>`}</h3>
+                ${formOpen ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open" data-kind="item"><i class="fa-solid fa-plus"></i> Add item</button>`}</h3>
             ${seedNote}
-            ${items.length ? `<div class="dsp-items">${items.map(itemHtml).join('')}</div>` : (f.open ? '' : '<div class="dsp-items-empty">Nothing yet. The AI adds what is picked up, bought, given or shown being used — or add it yourself.</div>')}
-            ${form}
+            ${items.length ? `
+                <div class="dsp-subhead"><i class="fa-solid fa-hand-fist"></i> Equipped <span>${on.length || ''}</span></div>
+                ${on.length ? `<div class="dsp-items">${on.map(itemHtml).join('')}</div>` : '<div class="dsp-items-empty is-small">Nothing equipped — click <i class="fa-solid fa-box-archive"></i> on an item to equip it.</div>'}
+                <div class="dsp-subhead"><i class="fa-solid fa-box-archive"></i> Backpack <span>${pack.length || ''}</span></div>
+                ${pack.length ? `<div class="dsp-items">${pack.map(itemHtml).join('')}</div>` : '<div class="dsp-items-empty is-small">Empty.</div>'}`
+            : (formOpen ? '' : '<div class="dsp-items-empty">Nothing yet. The AI adds what is picked up, bought, given or shown being used — or add it yourself.</div>')}
+            ${formHtml('item')}
+        </section>`;
+}
+
+function conditionsHtml() {
+    const list = getConditions(selected.name, selected.isUser);
+    const formOpen = itemForm.open && itemForm.kind === 'condition';
+    if (!list.length && !formOpen) {
+        return `<div class="dsp-cond-bar is-empty"><span>No conditions</span>
+            <button type="button" class="dsp-text-btn dsp-cond-add" data-action="item-open" data-kind="condition"><i class="fa-solid fa-plus"></i> Condition</button></div>`;
+    }
+    return `
+        <section class="dsp-section dsp-conditions">
+            <h3 class="dsp-section-title">Conditions
+                ${formOpen ? '' : '<button type="button" class="dsp-text-btn dsp-item-new" data-action="item-open" data-kind="condition"><i class="fa-solid fa-plus"></i> Add</button>'}</h3>
+            ${list.length ? `<div class="dsp-conds">${list.map(c => {
+                const eff = effectText(c.effects);
+                const tip = [c.name, c.desc, eff].filter(Boolean).join(' — ');
+                return `<span class="dsp-cond" data-id="${escapeHtml(c.id)}" data-tip="${escapeHtml(tip)}" tabindex="0" aria-label="${escapeHtml(tip)}">
+                    <span class="dsp-cond-icon">${escapeHtml(c.icon || DEFAULT_CONDITION_ICON)}</span>
+                    <span class="dsp-cond-name">${escapeHtml(c.name)}</span>
+                    ${eff ? `<span class="dsp-cond-eff">${escapeHtml(eff)}</span>` : ''}
+                    <button type="button" class="dsp-cond-remove" title="End ${escapeHtml(c.name)}"><i class="fa-solid fa-xmark"></i></button>
+                </span>`;
+            }).join('')}</div>` : ''}
+            ${formHtml('condition')}
         </section>`;
 }
 
 function submitItemForm() {
     if (!selected) return;
-    const res = addItem(selected.name, selected.isUser, {
-        icon: itemForm.icon, name: itemForm.name, desc: itemForm.desc, aiCanRemove: itemForm.aiCanRemove,
-    });
-    if (res && res.error) { itemForm.error = res.error; renderAll(); return; }
-    Object.assign(itemForm, { open: false, icon: '', name: '', desc: '', aiCanRemove: true, error: '' });
+    const f = itemForm;
+    const res = f.kind === 'condition'
+        ? addCondition(selected.name, selected.isUser, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects })
+        : addItem(selected.name, selected.isUser, {
+            icon: f.icon, name: f.name, desc: f.desc, effects: f.effects,
+            qty: f.qty, equipped: f.equipped, aiCanRemove: f.aiCanRemove,
+        });
+    if (res && res.error) { f.error = res.error; renderAll(); return; }
+    resetForm();
     renderAll();
 }
 
@@ -530,7 +607,7 @@ function bindRootListeners(root) {
         const tab = e.target.closest('.dsp-tab');
         if (tab) {
             selected = { name: tab.getAttribute('data-name'), isUser: tab.getAttribute('data-user') === '1' };
-            Object.assign(itemForm, { open: false, error: '' });
+            resetForm();
             renderAll();
             return;
         }
@@ -539,18 +616,37 @@ function bindRootListeners(root) {
         const itemRow = e.target.closest('.dsp-item');
         if (itemRow && selected) {
             const id = itemRow.getAttribute('data-id');
-            if (e.target.closest('.dsp-item-lock')) {
-                const item = getEquipment(selected.name, selected.isUser).find(i => i.id === id);
-                if (item) updateItem(selected.name, selected.isUser, id, { aiCanRemove: item.aiCanRemove === false });
+            const item = getEquipment(selected.name, selected.isUser).find(i => i.id === id);
+            if (!item) return;
+            if (e.target.closest('.dsp-item-lock')) { updateItem(selected.name, selected.isUser, id, { aiCanRemove: item.aiCanRemove === false }); return; }
+            if (e.target.closest('.dsp-item-equip')) { updateItem(selected.name, selected.isUser, id, { equipped: !item.equipped }); return; }
+            const qtyBtn = e.target.closest('.dsp-qty-btn');
+            if (qtyBtn) {
+                const next = item.qty + Number(qtyBtn.getAttribute('data-qty'));
+                if (next <= 0 && !(root.ownerDocument.defaultView || window).confirm(`Remove ${item.name}?`)) return;
+                updateItem(selected.name, selected.isUser, id, { qty: next });
                 return;
             }
             if (e.target.closest('.dsp-item-remove')) { removeItem(selected.name, selected.isUser, id); return; }
         }
+        const cond = e.target.closest('.dsp-cond');
+        if (cond && selected && e.target.closest('.dsp-cond-remove')) {
+            removeCondition(selected.name, selected.isUser, cond.getAttribute('data-id'));
+            return;
+        }
         const value = e.target.closest('button.dsp-value');
         if (value) { startEdit(value); return; }
         const action = e.target.closest('[data-action]')?.getAttribute('data-action');
-        if (action === 'item-open') { itemForm.open = true; itemForm.error = ''; renderAll(); root.querySelector('.dsp-item-in-name')?.focus(); return; }
-        if (action === 'item-cancel') { Object.assign(itemForm, { open: false, icon: '', name: '', desc: '', aiCanRemove: true, error: '' }); renderAll(); return; }
+        if (action === 'item-open') {
+            const kind = e.target.closest('[data-kind]')?.getAttribute('data-kind') || 'item';
+            if (!itemForm.open || itemForm.kind !== kind) { resetForm(); itemForm.kind = kind; }
+            itemForm.open = true;
+            itemForm.error = '';
+            renderAll();
+            root.querySelector('.dsp-item-in-name')?.focus();
+            return;
+        }
+        if (action === 'item-cancel') { resetForm(); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
         if (action === 'gear-request' && selected) { requestStartingGear(selected.name, selected.isUser); return; }
         if (action === 'gear-cancel' && selected) { cancelStartingGear(selected.name, selected.isUser); return; }
@@ -576,9 +672,10 @@ function bindRootListeners(root) {
     });
     root.addEventListener('change', (e) => {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
+        if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
     });
     root.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && e.target.closest && e.target.closest('.dsp-item-form') && e.target.matches('input[type=text]')) {
+        if (e.key === 'Enter' && e.target.closest && e.target.closest('.dsp-item-form') && e.target.matches('input[type=text], input[type=number]')) {
             e.preventDefault();
             submitItemForm();
             return;

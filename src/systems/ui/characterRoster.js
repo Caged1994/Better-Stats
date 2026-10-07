@@ -46,6 +46,7 @@ import { addCharacterAlias } from '../features/characterAliases.js';
 import { deleteStatSheet } from '../features/characterStats.js';
 import { deleteMemoriesEverywhere } from '../features/characterMemories.js';
 import { deleteEquipmentEverywhere } from '../features/characterEquipment.js';
+import { deleteConditionsEverywhere } from '../features/characterConditions.js';
 
 let contextMenuTarget = ''; // character name currently under right-click
 
@@ -1101,6 +1102,7 @@ function purgeCharacter(name) {
         if (s.activeUserCharacter === name) s.activeUserCharacter = null;
         deleteStatSheet(name, true);
         deleteEquipmentEverywhere(name, true);
+        deleteConditionsEverywhere(name, true);
         saveSettings();
         return;
     }
@@ -1127,6 +1129,7 @@ function purgeCharacter(name) {
     deleteStatSheet(name, false);
     deleteMemoriesEverywhere(name);
     deleteEquipmentEverywhere(name, false);
+    deleteConditionsEverywhere(name, false);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata, not extensionSettings. Wipe those too or the
     // tile reappears on the next renderGrid (which reads via the active
