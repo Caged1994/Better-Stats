@@ -8183,3 +8183,26 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 .rpg-stat-color-reset:hover { color: #fff; }
 
 .rpg-stat-setting-row.is-off .rpg-setting-label-group { opacity: 0.45; }
+
+.rpg-stat-kind {
+    margin-left: 4px;
+    padding: 0 5px;
+    font-size: 0.68em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(234, 234, 234, 0.6);
+}
+
+.rpg-stat-delete {
+    margin-left: 6px;
+    padding: 0 4px;
+    font-size: 0.75em;
+    color: rgba(234, 234, 234, 0.5);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.rpg-stat-delete:hover { color: #e94560; }

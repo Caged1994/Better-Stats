@@ -75,8 +75,8 @@ import { escapeHtml } from '../../utils/html.js';
 import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
 // Character Stats: the sheet (definitions, base values, AI flags) is shared by
 // every campaign, so it travels across version switches like colour/aliases.
-import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending, setStatEnabled, setStatColor, getDisabledStatIds, getStatColors, STATS_CHANGED_EVENT } from '../features/characterStats.js';
-import { createCustomStat, clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK, BUILTIN_STATES, isHexColor } from '../../utils/statsModel.js';
+import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending, setStatEnabled, setStatColor, getDisabledStatIds, getStatColors, STATS_CHANGED_EVENT, addCustomStat, deleteCustomStat, getCustomStatDefinitions } from '../features/characterStats.js';
+import { clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK, BUILTIN_STATES, isHexColor } from '../../utils/statsModel.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -558,9 +558,7 @@ function statRowHtml(stat) {
     const range = isState ? '0–100%' : '1–100';
     // Stats (rings) get a colour picker: global for the built-ins, this
     // character's own for custom stats. Attributes show their abbreviation.
-    const colorTip = stat.builtin
-        ? `Colour of ${stat.name} for every character`
-        : `Colour of ${stat.name}`;
+    const colorTip = `Colour of ${stat.name} for every character`;
     const swatch = isState
         ? `<label class="cw-stat-swatch" title="${escapeHtml(colorTip)}" style="background:${escapeHtml(stat.color || '#888888')}">
                 <input type="color" class="cw-stat-color" value="${escapeHtml(toSixDigitHex(stat.color))}" aria-label="${escapeHtml(colorTip)}">
@@ -568,12 +566,10 @@ function statRowHtml(stat) {
         : `<span class="cw-stat-abbr">${escapeHtml(stat.abbr || stat.name.slice(0, 3).toUpperCase())}</span>`;
     const tip = stat.description ? ` title="${escapeHtml(stat.description)}"` : '';
     const disabledAttr = off ? ' disabled' : '';
-    const onSwitch = stat.builtin
-        ? `<label class="rpg-toggle-switch cw-stat-on" title="${off ? 'Switched off' : 'Switched on'} for every character — click to change">
+    const onSwitch = `<label class="rpg-toggle-switch cw-stat-on" title="${off ? 'Switched off' : 'Switched on'} for every character — click to change">
                 <input type="checkbox" class="cw-stat-on-input"${off ? '' : ' checked'} aria-label="Use ${escapeHtml(stat.name)}">
                 <span class="rpg-toggle-slider"></span>
-           </label>`
-        : '<span class="cw-stat-on-spacer" title="Custom stats are always on — delete them to remove"></span>';
+           </label>`;
     return `
         <div class="cw-stat-row${stat.builtin ? '' : ' is-custom'}${off ? ' is-off' : ''}" data-stat="${escapeHtml(stat.id)}">
             ${swatch}
@@ -589,7 +585,7 @@ function statRowHtml(stat) {
                 <input type="checkbox" class="cw-stat-ai-input"${stat.ai ? ' checked' : ''}${disabledAttr}> AI
             </label>
             ${onSwitch}
-            ${stat.builtin ? '<span class="cw-stat-del-spacer"></span>' : `<button type="button" class="rpg-dc-knife-btn cw-stat-delete" title="Remove ${escapeHtml(stat.name)}"><i class="fa-solid fa-trash"></i></button>`}
+            ${stat.builtin ? '<span class="cw-stat-del-spacer"></span>' : `<button type="button" class="rpg-dc-knife-btn cw-stat-delete" title="Delete ${escapeHtml(stat.name)} for every character"><i class="fa-solid fa-trash"></i></button>`}
         </div>`;
 }
 
@@ -632,7 +628,7 @@ function renderStats() {
             <div class="cw-stats-group-head"><span>Stats</span><span class="muted">0–100% · rings in the Stats panel</span></div>
             ${states.map(statRowHtml).join('')}
         </div>` : ''}
-        <p class="helper cw-stats-legend"><strong>On</strong> and the colour of the built-in stats apply to every character.</p>`);
+        <p class="helper cw-stats-legend"><strong>On</strong>, the colour and the custom stats themselves apply to every character; starting values and the AI tick are this character's.</p>`);
 }
 
 function onGlobalStatsChanged(e) {
@@ -649,10 +645,23 @@ function syncGlobalStatSettings() {
     const off = new Set(getDisabledStatIds());
     const colors = getStatColors();
     const defaults = new Map(BUILTIN_STATES.map(d => [d.id, d.color]));
+    // Custom stats added or deleted elsewhere (Settings, another character).
+    const defs = getCustomStatDefinitions();
+    const defIds = new Set(defs.map(d => d.id));
+    draft.stats = draft.stats.filter(st => st.builtin || defIds.has(st.id));
+    const have = new Set(draft.stats.map(st => st.id));
+    if (defs.some(d => !have.has(d.id))) {
+        const fresh = getStatSheet(draft.name, draft.isUser);
+        for (const st of fresh) {
+            if (have.has(st.id)) continue;
+            const after = draft.stats.map(x => x.kind).lastIndexOf(st.kind);
+            draft.stats.splice(after + 1, 0, { ...st });
+        }
+    }
     for (const st of draft.stats) {
-        if (!st.builtin) continue;
         st.enabled = !off.has(st.id);
-        if (st.kind === 'state') st.color = isHexColor(colors[st.id]) ? colors[st.id] : (defaults.get(st.id) || st.color);
+        if (st.builtin && st.kind === 'state') st.color = isHexColor(colors[st.id]) ? colors[st.id] : (defaults.get(st.id) || st.color);
+        else if (!st.builtin && isHexColor(colors[st.id])) st.color = colors[st.id];
     }
 }
 
@@ -1972,7 +1981,7 @@ function bindStaticListeners() {
     // mirrored onto the draft so the tab repaints without losing edits.
     $modal.on('change.cw', '#cw-stats-editor .cw-stat-on-input', function () {
         const stat = findDraftStat(this);
-        if (!stat || !stat.builtin) return;
+        if (!stat) return;
         const on = $(this).is(':checked');
         setStatEnabled(stat.id, on);
         stat.enabled = on;
@@ -1987,8 +1996,7 @@ function bindStaticListeners() {
         if (!stat) return;
         const color = String($(this).val() || '').toLowerCase();
         stat.color = color;
-        if (stat.builtin) setStatColor(stat.id, color);
-        else draft.dirty.stats = true;
+        setStatColor(stat.id, color);
         renderStats();
     });
     // Settings → Stats changed while the card is open: repaint the tab.
@@ -2009,8 +2017,10 @@ function bindStaticListeners() {
     $modal.on('click.cw', '#cw-stats-editor .cw-stat-delete', function () {
         const stat = findDraftStat(this);
         if (!stat || stat.builtin) return;
+        const ok = window.confirm(`Delete the stat "${stat.name}" for every character?\n\nTheir values for it are deleted too.`);
+        if (!ok) return;
+        deleteCustomStat(stat.id);
         draft.stats = draft.stats.filter(s => s.id !== stat.id);
-        draft.dirty.stats = true;
         renderStats();
     });
     // The AI box follows the kind's default until the user touches it.
@@ -2020,7 +2030,8 @@ function bindStaticListeners() {
     const addStat = () => {
         if (!draft) return;
         const $err = $modal.find('#cw-stat-new-error');
-        const result = createCustomStat(draft.stats, {
+        // Custom stats are global: added for every character at once.
+        const result = addCustomStat({
             name: $modal.find('#cw-stat-new-name').val(),
             description: $modal.find('#cw-stat-new-desc').val(),
             kind: $modal.find('#cw-stat-new-kind').val(),
@@ -2030,11 +2041,7 @@ function bindStaticListeners() {
             $err.text(result.error);
             return;
         }
-        // Keep the documented order: attributes before states, customs after built-ins.
         const stat = result.stat;
-        const lastOfKind = draft.stats.map(s => s.kind).lastIndexOf(stat.kind);
-        draft.stats.splice(lastOfKind + 1, 0, stat);
-        draft.dirty.stats = true;
         resetStatAddForm();
         renderStats();
         $modal.find(`#cw-stats-editor .cw-stat-row[data-stat="${stat.id}"]`)[0]?.scrollIntoView({ block: 'nearest' });

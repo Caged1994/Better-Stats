@@ -82,14 +82,23 @@ check('the persona never is', S.isStatGenerationPending('Mastera', true) === fal
 check('persona and present NPC are the stat characters',
     JSON.stringify(S.getStatCharacters()) === JSON.stringify([{ name: 'Mastera', isUser: true }, { name: 'Elena', isUser: false }]));
 
-// ── 2. Sheet save + custom stat only for that character ──
+// ── 2. Sheet save + custom stats shared by every character ──
+// A sheet saved before custom stats went global is folded into the list.
+extensionSettings.characterStatCustomMigrated = false; // as on an install that predates the change
+extensionSettings.characterStatSheets = { npc: {}, user: { Old: { base: { c_luck: 15 }, ai: {}, custom: [{ id: 'c_luck', name: 'Luck', kind: 'attribute', description: 'Fortune' }] } } };
+check('old per-character custom stats are migrated to the global list', S.getStatSheet('Elena').some(s => s.id === 'c_luck') && S.getStatSheet('Old', true).find(s => s.id === 'c_luck').base === 15);
+check('...and dropped from the sheet', !('custom' in extensionSettings.characterStatSheets.user.Old));
+S.deleteCustomStat('c_luck');
+S.deleteStatSheet('Old', true);
+const { stat: sanity, error: addErr } = S.addCustomStat({ name: 'Sanity', kind: 'state', description: 'Grip on reality' });
+check('custom stat added', !!sanity && !addErr, addErr);
+check('a duplicate name is refused', !!S.addCustomStat({ name: 'sanity' }).error);
 const list = S.getStatSheet('Mastera', true);
-const { stat: sanity } = M.createCustomStat(list, { name: 'Sanity', kind: 'state', description: 'Grip on reality' });
-list.push(sanity);
 list.find(s => s.id === 'str').base = 70;
 S.saveStatSheet('Mastera', true, list);
-check('custom stat saved on the persona', S.getStatSheet('Mastera', true).some(s => s.id === sanity.id));
-check('...and not on other characters', !S.getStatSheet('Elena').some(s => s.id === sanity.id));
+check('custom stat is on the persona', S.getStatSheet('Mastera', true).some(s => s.id === sanity.id));
+check('...and on every other character', S.getStatSheet('Elena').some(s => s.id === sanity.id));
+check('custom stats are not stored in the sheet', !('custom' in extensionSettings.characterStatSheets.user.Mastera));
 check('base value saved', S.getStatSheet('Mastera', true).find(s => s.id === 'str').base === 70);
 check('changes broadcast an event', events.includes(S.STATS_CHANGED_EVENT));
 
@@ -109,7 +118,7 @@ S.setCurrentStatValue('Mastera', true, 'str', 70);
 const instr = pb.generateTrackerInstructions(false, false);
 check('tracker instructions ask for "stats"', instr.includes('"stats"') && instr.includes('"Elena"') && instr.includes('"Mastera"'));
 check('fixed stats are read-only context', /Fixed stats/.test(instr) && /Strength 70/.test(instr));
-check('custom stat is explained to the AI', instr.includes('Sanity (Mastera only)'));
+check('custom stat is explained to the AI', instr.includes('- Sanity, 0-100%: Grip on reality'));
 check('the attribute scale is explained', instr.includes('10 = ordinary person') && instr.includes('20 = human peak'));
 check('a new NPC is asked to be generated', /NEW: Elena has no stats yet/.test(instr) && /"Strength": "X"/.test(instr));
 extensionSettings.customTrackerPrompt = 'MY OWN PROMPT';
@@ -178,11 +187,12 @@ S.setStatColor('health', 'red; background:url(x)');
 check('...ignoring anything that is not a hex colour', S.getStatSheet('Elena').find(s => s.id === 'health').color === '#e5484d');
 
 // ── 7. Deleting a custom stat / character cleans up ──
-const trimmed = S.getStatSheet('Mastera', true).filter(s => s.id !== sanity.id);
 S.setCurrentStatValue('Mastera', true, sanity.id, 33);
-S.saveStatSheet('Mastera', true, trimmed);
-check('removing a custom stat drops its current values',
-    !Object.values(extensionSettings.characterStatValues).some(b => b['user:Mastera'] && sanity.id in b['user:Mastera']));
+S.setCurrentStatValue('Elena', false, sanity.id, 44);
+S.deleteCustomStat(sanity.id);
+check('deleting a custom stat removes it from everyone', !S.getStatSheet('Mastera', true).some(s => s.id === sanity.id) && !S.getStatSheet('Elena').some(s => s.id === sanity.id));
+check('...and drops every current value',
+    !Object.values(extensionSettings.characterStatValues).some(b => Object.values(b).some(v => sanity.id in v)));
 S.deleteCampaignStatValues('camp1');
 check('deleting a campaign drops its values', !extensionSettings.characterStatValues.camp1);
 S.deleteStatSheet('Mastera', true);

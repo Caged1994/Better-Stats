@@ -13,13 +13,15 @@
  *     user adds, a 0–100 percentage drawn as a ring. The AI updates them by
  *     default.
  * Every stat carries an "ai" flag (may the AI change it?) that the user can
- * flip per character. Custom stats belong to the one character they were
- * added to.
+ * flip per character. Custom stats are shared by every character: their
+ * definitions live in one global list (extensionSettings.characterStatCustom),
+ * while each character keeps its own starting value and AI tick for them.
  *
  * Stored sheet shape (extensionSettings.characterStatSheets[ns][name]):
  *   { base: { [statId]: number }, ai: { [statId]: boolean },
- *     custom: [{ id, name, description, kind, color }],
  *     pending?: true }   // NPC waiting for the AI to generate its values
+ * (Sheets saved before custom stats went global may still carry a
+ * `custom` array; characterStats.js folds it into the global list.)
  * Missing entries fall back to the defaults below, so new built-ins added in
  * a later release show up on existing sheets automatically.
  *
@@ -104,12 +106,13 @@ export function slugify(text) {
  * @param {object|null|undefined} stored
  * @returns {Array<object>}
  */
-export function resolveSheet(stored, { disabled = [], colors = {} } = {}) {
+export function resolveSheet(stored, { disabled = [], colors = {}, custom = [] } = {}) {
     const off = new Set(Array.isArray(disabled) ? disabled : []);
     const palette = colors && typeof colors === 'object' ? colors : {};
     const base = stored && typeof stored.base === 'object' && stored.base ? stored.base : {};
     const ai = stored && typeof stored.ai === 'object' && stored.ai ? stored.ai : {};
-    const custom = stored && Array.isArray(stored.custom) ? stored.custom : [];
+    // Custom stats come from the global list (shared by every character).
+    const customDefs = Array.isArray(custom) ? custom : [];
 
     const build = (def, kind, builtin) => {
         const k = STAT_KINDS[kind];
@@ -122,18 +125,19 @@ export function resolveSheet(stored, { disabled = [], colors = {} } = {}) {
             min: k.min,
             max: k.max,
             builtin,
-            // Built-in colours can be changed globally (Settings / Workshop).
-            color: (builtin && isHexColor(palette[def.id]) ? palette[def.id] : def.color) || '',
+            // Colours can be changed globally (Settings / Workshop).
+            color: (isHexColor(palette[def.id]) ? palette[def.id] : def.color) || '',
         };
         const fallbackBase = isFiniteNumber(def.base) ? def.base : k.defaultBase;
         stat.base = clampStatValue(stat, isFiniteNumber(base[def.id]) ? base[def.id] : fallbackBase);
-        stat.ai = typeof ai[def.id] === 'boolean' ? ai[def.id] : k.defaultAi;
-        stat.enabled = !(builtin && off.has(def.id));
+        const defaultAi = typeof def.ai === 'boolean' ? def.ai : k.defaultAi;
+        stat.ai = typeof ai[def.id] === 'boolean' ? ai[def.id] : defaultAi;
+        stat.enabled = !off.has(def.id);
         return stat;
     };
 
     const seen = new Set();
-    const customValid = custom.filter(c => {
+    const customValid = customDefs.filter(c => {
         if (!c || typeof c !== 'object') return false;
         if (typeof c.id !== 'string' || !c.id || typeof c.name !== 'string' || !c.name.trim()) return false;
         if (!STAT_KINDS[c.kind]) return false;
@@ -146,7 +150,8 @@ export function resolveSheet(stored, { disabled = [], colors = {} } = {}) {
     const customOf = (kind) => customValid
         .filter(c => c.kind === kind)
         .map(c => {
-            const def = { ...c, name: c.name.trim() };
+            // A custom stat has no built-in starting value of its own.
+            const def = { ...c, name: c.name.trim(), base: undefined };
             if (kind === 'state' && !def.color) def.color = CUSTOM_STATE_COLORS[colorIdx++ % CUSTOM_STATE_COLORS.length];
             return build(def, kind, false);
         });
@@ -164,20 +169,28 @@ export function resolveSheet(stored, { disabled = [], colors = {} } = {}) {
  * @param {Array<object>} stats
  */
 export function serializeSheet(stats, { pending = false } = {}) {
-    const out = { base: {}, ai: {}, custom: [] };
+    const out = { base: {}, ai: {} };
     if (pending) out.pending = true;
     for (const s of stats || []) {
         if (!s || !s.id) continue;
         const v = clampStatValue(s, s.base);
         if (v !== null) out.base[s.id] = v;
         out.ai[s.id] = !!s.ai;
-        if (!s.builtin) {
-            const entry = { id: s.id, name: String(s.name || '').trim(), description: String(s.description || '').trim(), kind: s.kind };
-            if (s.color) entry.color = s.color;
-            out.custom.push(entry);
-        }
     }
     return out;
+}
+
+/** The global definition stored for a custom stat. */
+export function customStatDefinition(stat) {
+    const entry = {
+        id: stat.id,
+        name: String(stat.name || '').trim(),
+        description: String(stat.description || '').trim(),
+        kind: stat.kind,
+        ai: !!stat.ai,
+    };
+    if (stat.color) entry.color = stat.color;
+    return entry;
 }
 
 /**
@@ -192,10 +205,10 @@ export function createCustomStat(existing, input) {
     const list = Array.isArray(existing) ? existing : [];
     const lower = name.toLowerCase();
     if (list.some(s => s.name.toLowerCase() === lower || (s.abbr && s.abbr.toLowerCase() === lower))) {
-        return { error: `This character already has a stat called "${name}".` };
+        return { error: `There is already a stat called "${name}".` };
     }
     if (list.filter(s => !s.builtin).length >= MAX_CUSTOM_STATS) {
-        return { error: `A character can have at most ${MAX_CUSTOM_STATS} custom stats.` };
+        return { error: `You can have at most ${MAX_CUSTOM_STATS} custom stats.` };
     }
     const ids = new Set(list.map(s => s.id));
     let id = 'c_' + slugify(name);
@@ -386,13 +399,12 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
     const toGenerate = [];
     let hasAttributes = false;
     const addDescription = (e, s) => {
-        const descKey = s.builtin ? s.id : `${e.displayName}\u0000${s.id}`;
+        const descKey = s.id;
         // Compact prompts trust the AI with the well-known built-ins and only
         // explain the stats the user invented.
         if (describe.has(descKey) || !s.description || (compact && s.builtin)) return;
         const range = s.kind === 'state' ? '0-100%' : '1-100';
-        const owner = s.builtin ? '' : ` (${e.displayName} only)`;
-        describe.set(descKey, `- ${s.name}${owner}, ${range}: ${s.description}`);
+        describe.set(descKey, `- ${s.name}, ${range}: ${s.description}`);
     };
     for (const e of list) {
         const values = {};

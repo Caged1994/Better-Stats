@@ -37,6 +37,8 @@ import {
     buildStatsPrompt,
     activeStats,
     isHexColor,
+    createCustomStat,
+    customStatDefinition,
 } from '../../utils/statsModel.js';
 
 export const STATS_CHANGED_EVENT = 'dooms:stats-changed';
@@ -147,7 +149,103 @@ export function setStatColor(statId, color) {
 export function getStatSheet(name, isUser = false) {
     const store = sheetStore(isUser);
     const key = findKey(store, name);
-    return resolveSheet(key !== undefined ? store[key] : null, { disabled: getDisabledStatIds(), colors: getStatColors() });
+    return resolveSheet(key !== undefined ? store[key] : null, {
+        disabled: getDisabledStatIds(),
+        colors: getStatColors(),
+        custom: getCustomStatDefinitions(),
+    });
+}
+
+// ─── Custom stats (shared by every character) ───────────────────────────────
+
+/**
+ * The global list of custom stat definitions. Sheets saved before custom
+ * stats went global carried their own `custom` array: the first read folds
+ * those into the global list (first definition of an id wins).
+ */
+export function getCustomStatDefinitions() {
+    if (!Array.isArray(extensionSettings.characterStatCustom)) extensionSettings.characterStatCustom = [];
+    const list = extensionSettings.characterStatCustom;
+    if (!extensionSettings.characterStatCustomMigrated) {
+        extensionSettings.characterStatCustomMigrated = true;
+        const ids = new Set(list.map(c => c && c.id));
+        const root = extensionSettings.characterStatSheets;
+        for (const ns of ['user', 'npc']) {
+            const store = root && root[ns];
+            if (!store || typeof store !== 'object') continue;
+            for (const sheet of Object.values(store)) {
+                if (!sheet || !Array.isArray(sheet.custom)) continue;
+                for (const c of sheet.custom) {
+                    if (c && typeof c.id === 'string' && !ids.has(c.id)) {
+                        ids.add(c.id);
+                        list.push({ ...c });
+                    }
+                }
+                delete sheet.custom;
+            }
+        }
+    }
+    return list;
+}
+
+/**
+ * Adds a custom stat for every character. Returns { stat } or { error }.
+ * @param {{name: string, description?: string, kind?: string, ai?: boolean}} input
+ */
+export function addCustomStat(input) {
+    const all = resolveSheet(null, { custom: getCustomStatDefinitions() });
+    const result = createCustomStat(all, input);
+    if (result.error) return result;
+    getCustomStatDefinitions().push(customStatDefinition(result.stat));
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+    return result;
+}
+
+/** Updates the name, description or colour of a custom stat. */
+export function updateCustomStat(statId, changes = {}) {
+    const def = getCustomStatDefinitions().find(c => c.id === statId);
+    if (!def) return false;
+    if (typeof changes.name === 'string' && changes.name.trim()) def.name = changes.name.trim().slice(0, 40);
+    if (typeof changes.description === 'string') def.description = changes.description.trim().slice(0, 400);
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+    return true;
+}
+
+/**
+ * Removes a custom stat from every character: its definition, every
+ * character's starting value and AI tick, every campaign's current values,
+ * its colour and on/off entry.
+ */
+export function deleteCustomStat(statId) {
+    const list = getCustomStatDefinitions();
+    const idx = list.findIndex(c => c.id === statId);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    const root = extensionSettings.characterStatSheets;
+    for (const ns of ['user', 'npc']) {
+        const store = root && root[ns];
+        if (!store) continue;
+        for (const sheet of Object.values(store)) {
+            if (sheet?.base) delete sheet.base[statId];
+            if (sheet?.ai) delete sheet.ai[statId];
+        }
+    }
+    const values = extensionSettings.characterStatValues;
+    if (values && typeof values === 'object') {
+        for (const bucket of Object.values(values)) {
+            if (!bucket) continue;
+            for (const v of Object.values(bucket)) if (v && typeof v === 'object') delete v[statId];
+        }
+    }
+    if (extensionSettings.characterStatColors) delete extensionSettings.characterStatColors[statId];
+    if (Array.isArray(extensionSettings.characterStatsDisabled)) {
+        extensionSettings.characterStatsDisabled = extensionSettings.characterStatsDisabled.filter(id => id !== statId);
+    }
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+    return true;
 }
 
 /** Whether anything was ever saved for this character. */
