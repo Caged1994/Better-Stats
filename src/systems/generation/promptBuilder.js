@@ -16,6 +16,7 @@ import {
 import { applyLocks } from './lockManager.js';
 import { buildStatsPromptForGeneration, buildStatsContextSummary } from '../features/characterStats.js';
 import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary } from '../features/characterMemories.js';
+import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary } from '../features/characterEquipment.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -307,6 +308,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // to add new ones (same JSON object).
         const memoriesSection = buildMemoriesPromptForGeneration({ compact });
         if (memoriesSection) instructions += '\n\n' + memoriesSection;
+        // Character Equipment: what everyone carries, and how to change it.
+        const equipmentSection = buildEquipmentPromptForGeneration({ compact });
+        if (equipmentSection) instructions += '\n\n' + equipmentSection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -324,8 +328,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         const statsSection = buildStatsPromptForGeneration({ compact, standalone: true });
         // With stats asking for their own block, memories join it; alone they ask for one.
         const memoriesSection = buildMemoriesPromptForGeneration({ compact, standalone: !statsSection });
-        if (statsSection || memoriesSection) {
-            instructions += '\n' + [statsSection, memoriesSection].filter(Boolean).join('\n\n');
+        const equipmentSection = buildEquipmentPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection });
+        if (statsSection || memoriesSection || equipmentSection) {
+            instructions += '\n' + [statsSection, memoriesSection, equipmentSection].filter(Boolean).join('\n\n');
             if (includeContinuation) {
                 instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
             }
@@ -778,6 +783,8 @@ export function generateContextualSummary() {
         if (stats) summary += stats + '\n';
         const memories = buildMemoriesContextSummary();
         if (memories) summary += memories + '\n';
+        const equipment = buildEquipmentContextSummary();
+        if (equipment) summary += equipment + '\n';
     } catch (e) {
         console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }

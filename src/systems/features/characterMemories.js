@@ -6,7 +6,8 @@
  * campaign, so every chat in a campaign shares them:
  *   extensionSettings.characterMemories[campaignKey][npcName] = [entry, ...]
  *
- * The AI can only add memories (the "memories" key of the tracker JSON).
+ * The AI can only add memories (the "memories" key of the tracker JSON),
+ * and at most ONE per reply: extra ones are dropped (an important one wins).
  * Swiping or regenerating a reply removes the memories that reply added
  * (chat_metadata.dooms_tracker.memoriesUndo). Users add, edit, star and
  * delete memories in the Workshop.
@@ -29,6 +30,7 @@ import {
 import { currentCampaignKey, getStatCharacters, notifyStatsChanged } from './characterStats.js';
 
 export const MEMORIES_CHANGED_EVENT = 'dooms:memories-changed';
+export const MAX_MEMORIES_PER_REPLY = 1;
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 
@@ -222,13 +224,26 @@ function resolveNpcName(name) {
 export function applyAIMemories(raw, messageIndex) {
     if (!isMemoriesEnabled() || raw === null || raw === undefined) return 0;
     const added = [];
+    // One memory per reply: candidates in order, important ones (★ or
+    // flagged) first; the first one that is new for its character wins.
+    const candidates = [];
     for (const entry of normalizeAIMemories(raw)) {
         const name = resolveNpcName(entry.name);
         if (!name) continue;
         for (const item of entry.items) {
-            const res = addMemory(name, item.text, { important: item.important, source: 'ai', persist: false });
-            if (res && res.id) added.push({ name, id: res.id });
+            const starred = item.important || /^\s*(★|☆|\*|!)/.test(String(item.text));
+            candidates.push({ name, item, starred });
         }
+    }
+    candidates.sort((a, b) => Number(b.starred) - Number(a.starred));
+    // A Refresh of the same reply may already have added its one memory.
+    const prevRec = chat_metadata?.dooms_tracker?.memoriesUndo;
+    const alreadyAdded = prevRec && prevRec.messageIndex === messageIndex && prevRec.campaign === currentCampaignKey()
+        ? (prevRec.added || []).length : 0;
+    for (const { name, item } of candidates) {
+        if (added.length + alreadyAdded >= MAX_MEMORIES_PER_REPLY) break;
+        const res = addMemory(name, item.text, { important: item.important, source: 'ai', persist: false });
+        if (res && res.id) added.push({ name, id: res.id });
     }
     if (!added.length) return 0;
     const campaign = currentCampaignKey();

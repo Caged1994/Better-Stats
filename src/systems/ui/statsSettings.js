@@ -16,6 +16,7 @@ import {
     deleteCustomStat,
 } from '../features/characterStats.js';
 import { isMemoriesEnabled, setMemoriesEnabled, getRecentLimit, setRecentLimit } from '../features/characterMemories.js';
+import { isEquipmentEnabled, setEquipmentEnabled } from '../features/characterEquipment.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -81,6 +82,8 @@ let bound = false;
 /** Renders the rows and wires them up (once). */
 export function initStatsSettings() {
     renderStatsSettings();
+    const eqOn = document.getElementById('rpg-equipment-enabled');
+    if (eqOn) eqOn.checked = isEquipmentEnabled();
     const memOn = document.getElementById('rpg-memories-enabled');
     if (memOn) memOn.checked = isMemoriesEnabled();
     const memRecent = document.getElementById('rpg-memories-recent');
@@ -92,6 +95,7 @@ export function initStatsSettings() {
         if (!el || !el.classList) return;
         if (el.classList.contains('rpg-stat-toggle')) setStatEnabled(el.getAttribute('data-stat'), el.checked);
         else if (el.classList.contains('rpg-stat-color')) setStatColor(el.getAttribute('data-stat'), el.value);
+        else if (el.id === 'rpg-equipment-enabled') setEquipmentEnabled(el.checked);
         else if (el.id === 'rpg-memories-enabled') setMemoriesEnabled(el.checked);
         else if (el.id === 'rpg-memories-recent') { setRecentLimit(el.value); el.value = String(getRecentLimit()); }
     });

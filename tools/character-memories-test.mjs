@@ -123,12 +123,18 @@ check('a memories-only reply is not a parse failure', !parseResponse('```json\n{
 chat.push({ is_user: true, mes: 'go' }, { is_user: false, mes: reply });
 const n = Mem.applyAIMemories(parsed.memories, chat.length - 1);
 check('new AI memory added via alias, repeat skipped, persona ignored', n === 1, `n=${n}`);
+check('the prompt allows at most one new memory', instr.includes('at most ONE new memory per reply'));
 const newest = Mem.getMemories('Elena').at(-1);
 check('...marked important and as AI-written', newest.important && newest.source === 'ai' && newest.text === 'Mastera spared the Ash King for her');
 check('...older memories are untouched', Mem.getMemories('Elena').length === 2);
 check('undo recorded', chat_metadata.dooms_tracker?.memoriesUndo?.added?.length === 1);
 check('swipe removes the reply\'s memories', Mem.revertAIMemoriesForReplacedMessage(1) === 1 && Mem.getMemories('Elena').length === 1);
 check('...once', Mem.revertAIMemoriesForReplacedMessage(1) === 0);
+chat.push({ is_user: true, mes: 'more' }, { is_user: false, mes: 'ok' });
+const many = Mem.applyAIMemories({ Elena: ['Ate a quiet dinner', '★ Was knighted by the queen', 'Saw a comet'] }, chat.length - 1);
+check('only one memory per reply is kept', many === 1);
+check('...and an important one wins', Mem.getMemories('Elena').at(-1).text === 'Was knighted by the queen');
+check('a second update of the same reply adds nothing more', Mem.applyAIMemories({ Elena: ['Saw a comet'] }, chat.length - 1) === 0);
 
 // ── 5. Settings + cleanup ──
 Mem.setRecentLimit(500);

@@ -83,6 +83,7 @@ import {
     getRecentLimit, isMemoriesEnabled, MEMORIES_CHANGED_EVENT,
 } from '../features/characterMemories.js';
 import { fadedIds } from '../../utils/memoryModel.js';
+import { deleteEquipmentEverywhere } from '../features/characterEquipment.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -3279,6 +3280,7 @@ function deleteCharacter(name) {
             extensionSettings.activeUserCharacter = null;
         }
         deleteStatSheet(name, true);
+        deleteEquipmentEverywhere(name, true);
         saveOrWarn(saveSettings, 'settings');
         // A persona copied from an NPC shares the NPC's portrait file —
         // only files nothing else references are deleted.
@@ -3308,6 +3310,7 @@ function deleteCharacter(name) {
     // Stat sheet and its per-campaign values; memories in every campaign.
     deleteStatSheet(name, false);
     deleteMemoriesEverywhere(name);
+    deleteEquipmentEverywhere(name, false);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata. Without wiping those, the Roster grid (which
     // reads via the active getters) shows the character right back after

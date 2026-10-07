@@ -38,6 +38,7 @@ import { updateWeatherEffect } from '../ui/weatherEffects.js';
 import { applyCharacterAliases } from '../features/characterAliases.js';
 import { applyAIStatUpdates, revertAIStatsForReplacedMessage } from '../features/characterStats.js';
 import { applyAIMemories, revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
+import { applyAIEquipment, revertAIEquipmentForReplacedMessage, notifyBlockedRemovals } from '../features/characterEquipment.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -225,6 +226,14 @@ export async function onMessageReceived(data) {
                     applyAIMemories(parsedData.memories, chat.length - 1);
                 } catch (e) {
                     console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
+                }
+            }
+            // Character Equipment: same rule.
+            if (parsedData.equipment && isAwaitingNewMessage) {
+                try {
+                    notifyBlockedRemovals(applyAIEquipment(parsedData.equipment, chat.length - 1));
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Equipment: applying AI update failed', e);
                 }
             }
             // Store RPG data for this specific swipe in the message's extra field
@@ -476,6 +485,7 @@ export function onMessageSwiped(messageIndex) {
         // the new swipe from the values that reply saw.
         try { revertAIStatsForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIMemoriesForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIEquipmentForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

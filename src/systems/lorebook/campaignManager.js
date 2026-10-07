@@ -29,6 +29,7 @@ import {
 } from './campaignProfiles.js';
 import { deleteCampaignStatValues, notifyStatsChanged } from '../features/characterStats.js';
 import { deleteCampaignMemories, notifyMemoriesChanged } from '../features/characterMemories.js';
+import { deleteCampaignEquipment } from '../features/characterEquipment.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ export async function deleteCampaign(id) {
     // Character stats keep one set of current values per campaign.
     deleteCampaignStatValues(id);
     deleteCampaignMemories(id);
+    deleteCampaignEquipment(id);
 
     delete extensionSettings.lorebook.campaigns[id];
 

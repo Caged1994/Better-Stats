@@ -585,6 +585,8 @@ export function saveChatData({ immediate = false } = {}) {
         statsUndo: chat_metadata.dooms_tracker?.statsUndo || null,
         // Undo for the memories the last reply added (characterMemories.js).
         memoriesUndo: chat_metadata.dooms_tracker?.memoriesUndo || null,
+        // Undo for the equipment changes of the last reply (characterEquipment.js).
+        equipmentUndo: chat_metadata.dooms_tracker?.equipmentUndo || null,
         timestamp: Date.now()
     };
     // Persist per-chat character tracking data when enabled

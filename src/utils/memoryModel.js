@@ -3,7 +3,8 @@
  *
  * NPCs keep a list of one-line memories of important things that happened
  * to them. The AI only ever ADDS memories (through a "memories" key in the
- * tracker JSON); removing or rewriting them is left to the user.
+ * tracker JSON), at most one per reply and only when something memorable
+ * happened; removing or rewriting them is left to the user.
  *
  * Two kinds:
  *   - important (★): life-changing events — always sent to the AI.
@@ -131,7 +132,7 @@ export function buildMemoriesPrompt(entries, { compact = true, standalone = fals
         lines.push(`- ${e.name}: ${shown.map(m => (m.important ? IMPORTANT_MARK + ' ' : '') + m.text).join('; ')}`);
     }
     const names = list.map(e => e.name);
-    const example = JSON.stringify({ memories: { [names[0]]: ['Short memory of what just happened'] } });
+    const example = JSON.stringify({ memories: { [names[0]]: 'Short memory of what just happened' } });
     let out = '';
     if (lines.length) {
         out += compact
@@ -143,7 +144,7 @@ export function buildMemoriesPrompt(entries, { compact = true, standalone = fals
         ? 'start your reply with ONE JSON code block'
         : 'add a "memories" key to the same tracker JSON object';
     out += compact
-        ? `When something important happens to ${names.join(', ')}, ${where}: ${example} — one short sentence (under 15 words) per new memory, from their point of view; put ${IMPORTANT_MARK} first if it is life-changing. Only NEW memories, never repeat old ones; omit the key when nothing memorable happens.`
-        : `NEW MEMORIES: when something important happens to one of these characters (${names.join(', ')}) — a turning point, a promise, a betrayal, a loss, a discovery, something learned about someone — ${where}, like ${example}. Write one short sentence (under 15 words) per new memory, from that character's point of view. Start it with ${IMPORTANT_MARK} if it is life-changing and should never be forgotten. Only add NEW memories: never repeat, rewrite or remove existing ones, and leave the key out entirely when nothing memorable happened. Never add memories for the player's character.`;
+        ? `Only if something truly important just happened to ${names.join(', ')}, ${where}: ${example} — at most ONE new memory per reply, one short sentence (under 15 words) from their point of view; put ${IMPORTANT_MARK} first if it is life-changing. Most replies need none: omit the key when nothing memorable happens, and never repeat old memories.`
+        : `NEW MEMORY: only if something truly important just happened to one of these characters (${names.join(', ')}) — a turning point, a promise, a betrayal, a loss, a discovery, something learned about someone — ${where}, like ${example}. At most ONE new memory per reply, for one character: one short sentence (under 15 words) from that character's point of view. Start it with ${IMPORTANT_MARK} if it is life-changing and should never be forgotten. Most replies need no new memory: leave the key out entirely when nothing memorable happened. Never repeat, rewrite or remove existing memories, and never add memories for the player's character.`;
     return out.trim();
 }

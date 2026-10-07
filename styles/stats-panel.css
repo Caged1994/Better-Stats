@@ -543,3 +543,196 @@ body.dooms-perf-mode #dooms-stats-panel {
     background: color-mix(in srgb, var(--dsp-accent) 10%, transparent);
 }
 .dsp-pending i { color: var(--dsp-accent); margin-top: 2px; }
+
+/* ── Equipment ─────────────────────────────────────────────── */
+.dsp-equip .dsp-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dsp-item-new {
+    margin-left: auto;
+    padding: 3px 8px;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.dsp-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 6px;
+}
+
+.dsp-items-empty {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--dsp-muted);
+    border: 1px dashed var(--dsp-border);
+    border-radius: 10px;
+}
+
+.dsp-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 5px 6px 5px 5px;
+    border-radius: 10px;
+    background: var(--dsp-card);
+    border: 1px solid var(--dsp-border);
+}
+
+.dsp-item.is-locked {
+    border-color: rgba(240, 192, 64, 0.35);
+    background: linear-gradient(160deg, rgba(240, 192, 64, 0.08), var(--dsp-card));
+}
+
+.dsp-item-icon {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+    line-height: 1;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    cursor: help;
+    outline: none;
+}
+
+/* Tooltip with the description: shown over the whole item (so it never
+   runs past the panel edge) while the icon is hovered or focused. */
+.dsp-item { position: relative; }
+
+.dsp-item:has(.dsp-item-icon:hover)::after,
+.dsp-item:has(.dsp-item-icon:focus-visible)::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 5;
+    padding: 6px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--dsp-text);
+    white-space: normal;
+    border-radius: 8px;
+    background: rgba(10, 10, 16, 0.97);
+    border: 1px solid var(--dsp-border);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+.dsp-item-icon:focus-visible { box-shadow: 0 0 0 2px var(--dsp-accent); }
+
+.dsp-item-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 1.25;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.dsp-item-lock,
+.dsp-item-remove {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 22px;
+    padding: 0;
+    font-size: 11px;
+    color: var(--dsp-muted);
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.dsp-item-lock:hover,
+.dsp-item-remove:hover { color: var(--dsp-text); background: var(--dsp-card-hover); }
+
+.dsp-item.is-locked .dsp-item-lock { color: #f0c040; }
+
+.dsp-item-remove { opacity: 0.55; }
+.dsp-item:hover .dsp-item-remove { opacity: 1; }
+
+.dsp-item-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 9px;
+    border-radius: 10px;
+    background: var(--dsp-card);
+    border: 1px solid var(--dsp-border);
+}
+
+.dsp-item-form-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dsp-item-form input[type=text] {
+    min-width: 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--dsp-text);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--dsp-border);
+    border-radius: 7px;
+    padding: 5px 8px;
+}
+
+.dsp-item-form input[type=text]:focus { outline: none; border-color: var(--dsp-accent); }
+
+.dsp-item-in-icon { width: 44px; text-align: center; font-size: 16px !important; }
+.dsp-item-in-name { flex: 1; }
+
+.dsp-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+    gap: 2px;
+    max-height: 92px;
+    overflow-y: auto;
+}
+
+.dsp-emoji {
+    height: 28px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.dsp-emoji:hover { background: var(--dsp-card-hover); }
+.dsp-emoji.is-on { border-color: var(--dsp-accent); background: color-mix(in srgb, var(--dsp-accent) 15%, transparent); }
+
+.dsp-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--dsp-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.dsp-item-error { flex: 1; font-size: 11px; color: #ff8a8a; }
+
+.dsp-text-btn.is-primary {
+    color: var(--dsp-text);
+    border-color: color-mix(in srgb, var(--dsp-accent) 60%, transparent);
+    background: color-mix(in srgb, var(--dsp-accent) 18%, transparent);
+}
