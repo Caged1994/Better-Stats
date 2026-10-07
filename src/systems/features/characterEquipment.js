@@ -32,6 +32,7 @@ import {
     statKey,
     isStatGenerationPending,
     notifyStatsChanged,
+    PLAYER_WORDS,
 } from './characterStats.js';
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ function resolveTarget(name) {
     try { userName = String(getContext().name1 || '').toLowerCase(); } catch (e) {}
     const scene = getStatCharacters();
     const persona = scene.find(c => c.isUser);
-    if (persona && (persona.name.toLowerCase() === lower || lower === userName)) return { name: persona.name, isUser: true };
+    if (persona && (persona.name.toLowerCase() === lower || lower === userName || PLAYER_WORDS.includes(lower))) return { name: persona.name, isUser: true };
     const aliases = extensionSettings.characterAliases || {};
     for (const [canon, list] of Object.entries(aliases)) {
         if (Array.isArray(list) && list.some(a => String(a).toLowerCase() === lower)) return { name: canon, isUser: false };
@@ -225,6 +226,7 @@ export function applyAIEquipment(raw, messageIndex) {
         }
         for (const item of plan.blocked) result.blocked.push({ name: target.name, item: item.name });
     }
+    console.log(`[Dooms Tracker] Equipment: ${result.added} added, ${result.removed} removed${result.blocked.length ? `, ${result.blocked.length} locked kept` : ''}`);
     if (!result.added && !result.removed) return result;
     const campaign = currentCampaignKey();
     try {

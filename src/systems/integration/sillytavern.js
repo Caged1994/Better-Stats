@@ -228,6 +228,12 @@ export async function onMessageReceived(data) {
                     console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
+            // What the reply carried for the new trackers — shown in the
+            // System Log so a missing update can be told apart from a
+            // reply that never contained one.
+            if (isAwaitingNewMessage) {
+                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            }
             // Character Equipment: same rule.
             if (parsedData.equipment && isAwaitingNewMessage) {
                 try {

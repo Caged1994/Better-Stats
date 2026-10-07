@@ -367,6 +367,7 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
                     console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
+            console.log(`[Dooms Tracker] Tracker update — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, memories: ${parsedData.memories || 'no'}`);
             if (parsedData.equipment) {
                 try {
                     notifyBlockedRemovals(applyAIEquipment(parsedData.equipment, chat.length - 1));

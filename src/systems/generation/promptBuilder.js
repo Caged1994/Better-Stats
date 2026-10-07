@@ -14,9 +14,9 @@ import {
     toFieldKey
 } from './jsonPromptHelpers.js';
 import { applyLocks } from './lockManager.js';
-import { buildStatsPromptForGeneration, buildStatsContextSummary } from '../features/characterStats.js';
-import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary } from '../features/characterMemories.js';
-import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary } from '../features/characterEquipment.js';
+import { buildStatsPromptForGeneration, buildStatsContextSummary, getStatsExampleObject } from '../features/characterStats.js';
+import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary, isMemoriesEnabled } from '../features/characterMemories.js';
+import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary, isEquipmentEnabled } from '../features/characterEquipment.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -142,6 +142,18 @@ export function generateTrackerExample() {
         } catch {
             example += '```\n' + committedTrackerData.characterThoughts + '\n```';
         }
+    }
+    // Stats, equipment and memories are part of the same object. Showing
+    // them in the previous reply's JSON matters: small models copy that
+    // structure and leave out any key it doesn't contain. Equipment and
+    // memories are change-only, so they appear empty ("nothing changed").
+    if (parts.length > 0) {
+        try {
+            const stats = getStatsExampleObject();
+            if (stats) parts.push(`  "stats": ${JSON.stringify(stats)}`);
+            if (isEquipmentEnabled()) parts.push('  "equipment": {}');
+            if (isMemoriesEnabled()) parts.push('  "memories": {}');
+        } catch (e) { /* the example is best-effort */ }
     }
     // If we have JSON parts, wrap them in unified structure
     if (parts.length > 0) {

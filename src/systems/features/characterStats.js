@@ -411,6 +411,23 @@ export function resolveActivePersonaName() {
     return names.length === 1 ? names[0] : null;
 }
 
+/**
+ * The player's character as stats/equipment see it: the Workshop persona
+ * when one resolves, otherwise SillyTavern's persona name — so the player
+ * is never silently left out of the prompt.
+ */
+export function getPersonaName() {
+    const fromWorkshop = resolveActivePersonaName();
+    if (fromWorkshop) return fromWorkshop;
+    try {
+        const n = String(getContext().name1 || '').trim();
+        return n || null;
+    } catch (e) { return null; }
+}
+
+/** Words the AI may use for the player instead of their name. */
+export const PLAYER_WORDS = ['you', 'player', 'the player', 'user', '{{user}}', 'protagonist', 'me', 'myself'];
+
 function parseCharacters(raw) {
     if (!raw) return [];
     try {
@@ -440,7 +457,7 @@ function removedLowerSet() {
 export function getStatCharacters({ source = 'committed' } = {}) {
     const out = [];
     const seen = new Set();
-    const persona = resolveActivePersonaName();
+    const persona = getPersonaName();
     const userNames = new Set(Object.keys(extensionSettings.userCharacters || {}).map(n => n.toLowerCase()));
     if (persona) {
         out.push({ name: persona, isUser: true });
@@ -521,6 +538,7 @@ function buildTargets() {
         const stats = getStatSheet(name, isUser);
         const names = [name];
         if (isUser && userName && userName.toLowerCase() !== name.toLowerCase()) names.push(userName);
+        if (isUser) names.push(...PLAYER_WORDS);
         if (!isUser) {
             const aliases = extensionSettings.characterAliases?.[name];
             if (Array.isArray(aliases)) names.push(...aliases.filter(a => typeof a === 'string'));
@@ -643,4 +661,22 @@ export function revertAIStatsForReplacedMessage(replacedIndex) {
         console.warn('[Dooms Tracker] Stats: undo failed', e);
         return 0;
     }
+}
+
+/**
+ * The "stats" object as the last reply should have had it (current values
+ * of AI-editable stats). Used in the together-mode example of the previous
+ * tracker JSON, so small models see "stats" as part of the format.
+ */
+export function getStatsExampleObject() {
+    if (!isCharacterStatsEnabled()) return null;
+    const out = {};
+    for (const { name, isUser } of getStatCharacters()) {
+        if (isStatGenerationPending(name, isUser)) continue;
+        const stats = activeStats(getStatSheet(name, isUser)).filter(s => s.ai);
+        if (!stats.length) continue;
+        const cur = getCurrentStatValues(name, isUser, stats);
+        out[name] = Object.fromEntries(stats.map(s => [s.name, cur[s.id]]));
+    }
+    return Object.keys(out).length ? out : null;
 }

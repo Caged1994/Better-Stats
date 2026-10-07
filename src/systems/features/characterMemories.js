@@ -27,7 +27,7 @@ import {
     buildMemoriesPrompt,
     selectForPrompt,
 } from '../../utils/memoryModel.js';
-import { currentCampaignKey, getStatCharacters, notifyStatsChanged } from './characterStats.js';
+import { currentCampaignKey, getStatCharacters, notifyStatsChanged, PLAYER_WORDS } from './characterStats.js';
 
 export const MEMORIES_CHANGED_EVENT = 'dooms:memories-changed';
 export const MAX_MEMORIES_PER_REPLY = 1;
@@ -207,7 +207,7 @@ function resolveNpcName(name) {
     let userName = '';
     try { userName = String(getContext().name1 || '').toLowerCase(); } catch (e) {}
     const userNames = new Set(Object.keys(extensionSettings.userCharacters || {}).map(n => n.toLowerCase()));
-    if (lower === userName || userNames.has(lower)) return null;
+    if (lower === userName || userNames.has(lower) || PLAYER_WORDS.includes(lower)) return null;
     // Alias → card name, then the scene's spelling, then as given.
     const aliases = extensionSettings.characterAliases || {};
     for (const [canon, list] of Object.entries(aliases)) {

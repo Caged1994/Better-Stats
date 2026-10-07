@@ -25,6 +25,7 @@ import {
     resetCurrentStatValues,
     currentCampaignKey,
     isStatGenerationPending,
+    getPersonaName,
 } from '../features/characterStats.js';
 import { getCharacterList, resolveActiveUserName, resolvePortrait } from './portraitBar.js';
 import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled } from '../features/characterEquipment.js';
@@ -83,7 +84,7 @@ function characterTabs() {
         tabs.push({ name, isUser });
     };
     let persona = null;
-    try { persona = resolveActiveUserName(); } catch (e) {}
+    try { persona = resolveActiveUserName() || getPersonaName(); } catch (e) {}
     if (persona) push(persona, true);
     try {
         for (const c of getCharacterList()) {

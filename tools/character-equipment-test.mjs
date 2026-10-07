@@ -122,6 +122,21 @@ check('swipe undoes it', Eq.revertAIEquipmentForReplacedMessage(1) === 3
     && Eq.getEquipment('Mastera', true).map(i => i.name).join() === "Father's sword,Torch" && Eq.getEquipment('Elena').length === 0);
 check('...once', Eq.revertAIEquipmentForReplacedMessage(1) === 0);
 
+// ── 4b. Robustness: how the player is named, the example, no Workshop persona ──
+committedTrackerData.infoBox = JSON.stringify({ location: { value: 'Hill' } });
+const ex = pb.generateTrackerExample();
+check('the previous-reply example shows the new keys', ex.includes('"equipment": {}') && ex.includes('"memories": {}') && ex.includes('"stats"'));
+chat.push({ is_user: true, mes: 'pick it up' }, { is_user: false, mes: 'ok' });
+Eq.applyAIEquipment({ you: { add: [{ icon: '⚡', name: 'Electric stone', desc: 'Hums with static' }] } }, chat.length - 1);
+check('"you" means the player\'s character', Eq.getEquipment('Mastera', true).some(i => i.name === 'Electric stone'));
+const savedUsers = extensionSettings.userCharacters;
+extensionSettings.userCharacters = { A: {}, B: {} }; // two personas, none active or linked
+extensionSettings.activeUserCharacter = null;
+const fallbackInstr = pb.generateTrackerInstructions(false, false);
+check('without a resolvable Workshop persona, SillyTavern\'s persona is still in the prompt', /\(player character\)/.test(fallbackInstr));
+extensionSettings.userCharacters = savedUsers;
+extensionSettings.activeUserCharacter = 'Mastera';
+
 // ── 5. Editing + cleanup ──
 const t = Eq.getEquipment('Mastera', true).find(i => i.name === 'Torch');
 Eq.updateItem('Mastera', true, t.id, { aiCanRemove: false });
