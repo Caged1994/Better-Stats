@@ -77,6 +77,12 @@ import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
 // every campaign, so it travels across version switches like colour/aliases.
 import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending, setStatEnabled, setStatColor, getDisabledStatIds, getStatColors, STATS_CHANGED_EVENT, addCustomStat, deleteCustomStat, getCustomStatDefinitions } from '../features/characterStats.js';
 import { clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK, BUILTIN_STATES, isHexColor } from '../../utils/statsModel.js';
+// Character Memories (NPCs only): per campaign, edited live (no Save needed).
+import {
+    getMemories, addMemory, updateMemory, deleteMemory, deleteMemoriesEverywhere,
+    getRecentLimit, isMemoriesEnabled, MEMORIES_CHANGED_EVENT,
+} from '../features/characterMemories.js';
+import { fadedIds } from '../../utils/memoryModel.js';
 
 /**
  * Runs a save function, surfacing failures instead of silently discarding
@@ -520,11 +526,14 @@ function loadVersion(name, isUser, versionId, { fullReset = false, carry = null 
     renderKnives();
     renderAliases();
     renderStats();
+    renderMemories();
     renderVersionStrip();
     if (fullReset) {
         $modal.find('#cw-knife-input').val('');
         $modal.find('#cw-alias-input').val('');
         resetStatAddForm();
+        $modal.find('#cw-mem-input').val('');
+        $modal.find('#cw-mem-error').text('');
         activatePane('identity');
     }
     // Suggestions generated for another version must not be kept for this one.
@@ -587,6 +596,53 @@ function statRowHtml(stat) {
             ${onSwitch}
             ${stat.builtin ? '<span class="cw-stat-del-spacer"></span>' : `<button type="button" class="rpg-dc-knife-btn cw-stat-delete" title="Delete ${escapeHtml(stat.name)} for every character"><i class="fa-solid fa-trash"></i></button>`}
         </div>`;
+}
+
+// ─── Memories tab ───────────────────────────────────────────────────────────
+
+function renderMemories() {
+    const $list = $modal.find('#cw-mem-list');
+    if (!$list.length) return;
+    const $meta = $modal.find('#cw-mem-meta');
+    if (!draft || draft.isUser) { $list.empty(); $meta.empty(); return; }
+    const list = getMemories(draft.name);
+    const limit = getRecentLimit();
+    const faded = fadedIds(list, limit);
+    const campaignId = getActiveCampaignId();
+    const campaign = campaignId ? extensionSettings.lorebook?.campaigns?.[campaignId]?.name : '';
+    const important = list.filter(m => m.important).length;
+    $meta.html(`
+        <span>${list.length} ${list.length === 1 ? 'memory' : 'memories'} · ${important} ★ · ${list.length - faded.size} sent to the AI</span>
+        ${campaign ? `<span class="cw-mem-campaign">${escapeHtml(campaign)}</span>` : ''}
+        ${isMemoriesEnabled() ? '' : '<span class="cw-mem-off">Memories are switched off in Settings → Stats</span>'}`);
+    if (!list.length) {
+        $list.html(`<div class="cw-mem-empty">No memories yet. They appear here as the story goes — or add one below.</div>`);
+        return;
+    }
+    // Newest first: the most recent memories are the ones you check.
+    $list.html([...list].reverse().map(m => {
+        const isFaded = faded.has(m.id);
+        return `
+        <div class="cw-mem-row${m.important ? ' is-important' : ''}${isFaded ? ' is-faded' : ''}" data-id="${escapeHtml(m.id)}">
+            <button type="button" class="cw-mem-star" title="${m.important ? 'Important — always remembered. Click to make it a normal memory' : 'Make it important — never forgotten'}" aria-pressed="${m.important}">${m.important ? '★' : '☆'}</button>
+            <div class="cw-mem-text" tabindex="0" title="Click to edit">${escapeHtml(m.text)}</div>
+            <span class="cw-mem-tags">
+                ${m.source === 'ai' ? '<span class="cw-mem-tag" title="Added by the AI">AI</span>' : ''}
+                ${isFaded ? '<span class="cw-mem-tag is-faded" title="Older than the most recent memories: kept here, no longer sent to the AI">faded</span>' : ''}
+            </span>
+            <button type="button" class="rpg-dc-knife-btn cw-mem-delete" title="Delete memory"><i class="fa-solid fa-trash"></i></button>
+        </div>`;
+    }).join(''));
+}
+
+function memoryIdOf(el) {
+    return $(el).closest('.cw-mem-row').attr('data-id');
+}
+
+function onMemoriesChanged() {
+    if (!$modal || !$modal.hasClass('is-open') || !draft || draft.isUser) return;
+    if ($modal.find('.cw-mem-edit').length) return; // don't kill an edit in progress
+    renderMemories();
 }
 
 /** <input type=color> only takes #rrggbb. */
@@ -1999,6 +2055,63 @@ function bindStaticListeners() {
         setStatColor(stat.id, color);
         renderStats();
     });
+    // Memories — saved immediately (they live per campaign, not per version).
+    window.removeEventListener(MEMORIES_CHANGED_EVENT, onMemoriesChanged);
+    window.addEventListener(MEMORIES_CHANGED_EVENT, onMemoriesChanged);
+    const addMem = () => {
+        if (!draft || draft.isUser) return;
+        const $in = $modal.find('#cw-mem-input');
+        const res = addMemory(draft.name, $in.val(), { important: $modal.find('#cw-mem-important').is(':checked'), source: 'user' });
+        if (res.error) { $modal.find('#cw-mem-error').text(res.error); return; }
+        $in.val('');
+        $modal.find('#cw-mem-important').prop('checked', false);
+        $modal.find('#cw-mem-error').text('');
+        renderMemories();
+    };
+    $modal.on('click.cw', '#cw-mem-add', addMem);
+    $modal.on('keydown.cw', '#cw-mem-input', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addMem(); }
+    });
+    $modal.on('input.cw', '#cw-mem-input', () => $modal.find('#cw-mem-error').text(''));
+    $modal.on('click.cw', '#cw-mem-list .cw-mem-star', function () {
+        if (!draft) return;
+        const id = memoryIdOf(this);
+        const m = getMemories(draft.name).find(x => x.id === id);
+        if (m) updateMemory(draft.name, id, { important: !m.important });
+        renderMemories();
+    });
+    $modal.on('click.cw', '#cw-mem-list .cw-mem-delete', function () {
+        if (!draft) return;
+        deleteMemory(draft.name, memoryIdOf(this));
+        renderMemories();
+    });
+    const startMemEdit = (el) => {
+        if (!draft) return;
+        const id = memoryIdOf(el);
+        const m = getMemories(draft.name).find(x => x.id === id);
+        if (!m) return;
+        const $ta = $('<textarea class="rpg-textarea cw-mem-edit" rows="2" maxlength="200"></textarea>').val(m.text);
+        $(el).replaceWith($ta);
+        $ta.trigger('focus');
+        let done = false;
+        const finish = (save) => {
+            if (done) return;
+            done = true;
+            if (save && String($ta.val()).trim() && $ta.val() !== m.text) updateMemory(draft.name, id, { text: String($ta.val()) });
+            $ta.remove();
+            renderMemories();
+        };
+        $ta.on('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+        });
+        $ta.on('blur', () => finish(true));
+    };
+    $modal.on('click.cw', '#cw-mem-list .cw-mem-text', function () { startMemEdit(this); });
+    $modal.on('keydown.cw', '#cw-mem-list .cw-mem-text', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); startMemEdit(this); }
+    });
+
     // Settings → Stats changed while the card is open: repaint the tab.
     window.removeEventListener(STATS_CHANGED_EVENT, onGlobalStatsChanged);
     window.addEventListener(STATS_CHANGED_EVENT, onGlobalStatsChanged);
@@ -3192,8 +3305,9 @@ function deleteCharacter(name) {
     // Aliases too — an orphaned alias entry would keep silently renaming a
     // future, unrelated character to this deleted one.
     if (extensionSettings.characterAliases) delete extensionSettings.characterAliases[name];
-    // Stat sheet and its per-campaign values.
+    // Stat sheet and its per-campaign values; memories in every campaign.
     deleteStatSheet(name, false);
+    deleteMemoriesEverywhere(name);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata. Without wiping those, the Roster grid (which
     // reads via the active getters) shows the character right back after

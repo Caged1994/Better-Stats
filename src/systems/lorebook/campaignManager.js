@@ -28,6 +28,7 @@ import {
     getActiveCampaignId as profilesActiveId,
 } from './campaignProfiles.js';
 import { deleteCampaignStatValues, notifyStatsChanged } from '../features/characterStats.js';
+import { deleteCampaignMemories, notifyMemoriesChanged } from '../features/characterMemories.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ export async function deleteCampaign(id) {
     const orphanCandidates = deleteCampaignProfiles(id);
     // Character stats keep one set of current values per campaign.
     deleteCampaignStatValues(id);
+    deleteCampaignMemories(id);
 
     delete extensionSettings.lorebook.campaigns[id];
 
@@ -333,6 +335,7 @@ export async function repaintAfterCampaignSwitch() {
     try { clearSessionAvatarPrompts(); } catch (e) {}
     // Current stat values are per campaign: open stat views must repaint.
     try { notifyStatsChanged({ source: 'campaign' }); } catch (e) {}
+    try { notifyMemoriesChanged({ source: 'campaign' }); } catch (e) {}
     // The data switch always happens; the DOM work is pointless (and can
     // resurrect panels) while the extension is disabled.
     if (extensionSettings.enabled === false) return;

@@ -1060,7 +1060,7 @@
             <div class="rpg-accordion-section" data-accordion="character-stats">
                 <div class="rpg-accordion-header">
                     <i class="fa-solid fa-chart-simple rpg-accordion-icon"></i>
-                    <span class="rpg-accordion-title">Stats</span>
+                    <span class="rpg-accordion-title">Stats &amp; Memories</span>
                     <i class="fa-solid fa-chevron-down rpg-accordion-chevron"></i>
                 </div>
                 <div class="rpg-accordion-body">
@@ -1074,6 +1074,27 @@
                     <div id="rpg-stats-toggle-attributes"></div>
                     <div class="rpg-subsection-label" style="margin-top:12px;">Custom</div>
                     <div id="rpg-stats-toggle-custom"></div>
+
+                    <div class="rpg-subsection-label" style="margin-top:16px;">Memories</div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Character memories</span>
+                            <span class="rpg-setting-hint">Characters (not your own) keep one-line memories of important
+                                events, added by the AI and by you in the Workshop's Memories tab.</span>
+                        </div>
+                        <label class="rpg-toggle-switch">
+                            <input type="checkbox" id="rpg-memories-enabled" />
+                            <span class="rpg-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Recent memories sent</span>
+                            <span class="rpg-setting-hint">How many normal memories per character the AI still receives.
+                                Older ones fade (kept, not sent). &#9733; Important memories are always sent.</span>
+                        </div>
+                        <input type="number" id="rpg-memories-recent" class="rpg-accordion-select" min="0" max="50" step="1" style="width:5em;" />
+                    </div>
                 </div>
             </div>
 
@@ -2468,6 +2489,7 @@
                     <button type="button" data-pane="injection" title="Injection">&#128137; <span class="cw-tab-label">Injection</span></button>
                     <button type="button" data-pane="knives" title="Knives">&#128298; <span class="cw-tab-label">Knives</span></button>
                     <button type="button" data-pane="stats" title="Stats">&#128202; <span class="cw-tab-label">Stats</span></button>
+                    <button type="button" class="cw-npc-only" data-pane="memories" title="Memories">&#129504; <span class="cw-tab-label">Memories</span></button>
                 </nav>
                 <div class="workshop-pane-host">
 
@@ -2792,6 +2814,33 @@
                                 <span class="cw-stats-add-error" id="cw-stat-new-error" role="alert"></span>
                                 <button type="button" class="rpg-btn" id="cw-stat-add">
                                     <i class="fa-solid fa-plus"></i> Add Stat
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- MEMORIES (NPCs only) -->
+                <section class="rpg-editor-pane cw-npc-only" data-pane="memories">
+                    <div class="rpg-editor-section">
+                        <h4>&#129504; Memories</h4>
+                        <p class="helper">One-line memories of what happened to this character, so the AI keeps them
+                            consistent. The AI adds new ones by itself when something important happens and never
+                            removes any. <strong>&#9733; Important</strong> memories are always sent; normal ones are
+                            sent while they are among the most recent and then <em>fade</em> (kept here, no longer
+                            sent). Memories belong to the active campaign. Click a memory to edit it.</p>
+                        <div class="cw-mem-meta" id="cw-mem-meta"></div>
+                        <div id="cw-mem-list"></div>
+                        <div class="cw-mem-add">
+                            <textarea id="cw-mem-input" class="rpg-textarea" rows="2" maxlength="200"
+                                placeholder="e.g. Mastera saved her from the wolves by the river"></textarea>
+                            <div class="cw-mem-add-row">
+                                <label class="cw-mem-important-toggle" title="Important memories are never forgotten">
+                                    <input type="checkbox" id="cw-mem-important"> &#9733; Important
+                                </label>
+                                <span class="cw-mem-error" id="cw-mem-error" role="alert"></span>
+                                <button type="button" class="rpg-btn" id="cw-mem-add">
+                                    <i class="fa-solid fa-plus"></i> Add Memory
                                 </button>
                             </div>
                         </div>

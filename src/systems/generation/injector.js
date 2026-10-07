@@ -17,6 +17,7 @@ import { getActiveCharacterColors } from '../../core/persistence.js';
 import { evaluateSuppression } from './suppression.js';
 import { parseQuests } from './parser.js';
 import { revertAIStatsForReplacedMessage } from '../features/characterStats.js';
+import { revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
 import { getPendingTwist, isPendingTwistAKnife, getPendingKnifeCharacter, clearPendingTwist, buildDoomTensionInstruction, DOOM_TWIST_SLOT, DOOM_TENSION_SLOT } from './doomCounter.js';
 import {
     generateTrackerExample,
@@ -669,6 +670,7 @@ export async function onGenerationStarted(type, data, dryRun) {
             const ctxChat = getContext().chat;
             const last = Array.isArray(ctxChat) ? ctxChat.length - 1 : undefined;
             revertAIStatsForReplacedMessage(last);
+            revertAIMemoriesForReplacedMessage(last);
         } catch (e) { /* best-effort */ }
     }
     if (!extensionSettings.enabled) {

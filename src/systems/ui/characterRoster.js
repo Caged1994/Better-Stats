@@ -44,6 +44,7 @@ import { escapeHtml, escapeAttr } from '../../utils/html.js';
 import { findSimilarCharacter } from '../../utils/nameSimilarity.js';
 import { addCharacterAlias } from '../features/characterAliases.js';
 import { deleteStatSheet } from '../features/characterStats.js';
+import { deleteMemoriesEverywhere } from '../features/characterMemories.js';
 
 let contextMenuTarget = ''; // character name currently under right-click
 
@@ -1120,8 +1121,9 @@ function purgeCharacter(name) {
     // Aliases too — an orphaned alias entry would keep silently renaming a
     // future, unrelated character to this deleted one.
     if (s.characterAliases) delete s.characterAliases[name];
-    // Stat sheet and its per-campaign values.
+    // Stat sheet and its per-campaign values; memories in every campaign.
     deleteStatSheet(name, false);
+    deleteMemoriesEverywhere(name);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata, not extensionSettings. Wipe those too or the
     // tile reappears on the next renderGrid (which reads via the active

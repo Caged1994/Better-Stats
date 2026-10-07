@@ -37,6 +37,7 @@ import { updateWeatherEffect } from '../ui/weatherEffects.js';
 // Name Ban
 import { applyCharacterAliases } from '../features/characterAliases.js';
 import { applyAIStatUpdates, revertAIStatsForReplacedMessage } from '../features/characterStats.js';
+import { applyAIMemories, revertAIMemoriesForReplacedMessage } from '../features/characterMemories.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -216,6 +217,14 @@ export async function onMessageReceived(data) {
                     applyAIStatUpdates(parsedData.stats, chat.length - 1);
                 } catch (e) {
                     console.warn('[Dooms Tracker] Stats: applying AI update failed', e);
+                }
+            }
+            // Character Memories: same rule — fresh replies only.
+            if (parsedData.memories && isAwaitingNewMessage) {
+                try {
+                    applyAIMemories(parsedData.memories, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
             // Store RPG data for this specific swipe in the message's extra field
@@ -466,6 +475,7 @@ export function onMessageSwiped(messageIndex) {
         // The reply being replaced may have changed character stats: start
         // the new swipe from the values that reply saw.
         try { revertAIStatsForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIMemoriesForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

@@ -15,6 +15,7 @@ import {
     getCustomStatDefinitions,
     deleteCustomStat,
 } from '../features/characterStats.js';
+import { isMemoriesEnabled, setMemoriesEnabled, getRecentLimit, setRecentLimit } from '../features/characterMemories.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -80,6 +81,10 @@ let bound = false;
 /** Renders the rows and wires them up (once). */
 export function initStatsSettings() {
     renderStatsSettings();
+    const memOn = document.getElementById('rpg-memories-enabled');
+    if (memOn) memOn.checked = isMemoriesEnabled();
+    const memRecent = document.getElementById('rpg-memories-recent');
+    if (memRecent) memRecent.value = String(getRecentLimit());
     if (bound) return;
     bound = true;
     document.addEventListener('change', (e) => {
@@ -87,6 +92,8 @@ export function initStatsSettings() {
         if (!el || !el.classList) return;
         if (el.classList.contains('rpg-stat-toggle')) setStatEnabled(el.getAttribute('data-stat'), el.checked);
         else if (el.classList.contains('rpg-stat-color')) setStatColor(el.getAttribute('data-stat'), el.value);
+        else if (el.id === 'rpg-memories-enabled') setMemoriesEnabled(el.checked);
+        else if (el.id === 'rpg-memories-recent') { setRecentLimit(el.value); el.value = String(getRecentLimit()); }
     });
     document.addEventListener('input', (e) => {
         const el = e.target;

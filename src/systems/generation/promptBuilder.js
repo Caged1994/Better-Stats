@@ -15,6 +15,7 @@ import {
 } from './jsonPromptHelpers.js';
 import { applyLocks } from './lockManager.js';
 import { buildStatsPromptForGeneration, buildStatsContextSummary } from '../features/characterStats.js';
+import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary } from '../features/characterMemories.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -302,6 +303,10 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // the user has replaced the tracker prompt with their own text.
         const statsSection = buildStatsPromptForGeneration({ compact });
         if (statsSection) instructions += '\n\n' + statsSection;
+        // Character Memories: what the NPCs in the scene remember, and how
+        // to add new ones (same JSON object).
+        const memoriesSection = buildMemoriesPromptForGeneration({ compact });
+        if (memoriesSection) instructions += '\n\n' + memoriesSection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -317,8 +322,10 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // No tracker section is enabled, but Character Stats still need a
         // JSON block of their own to come back through.
         const statsSection = buildStatsPromptForGeneration({ compact, standalone: true });
-        if (statsSection) {
-            instructions += '\n' + statsSection;
+        // With stats asking for their own block, memories join it; alone they ask for one.
+        const memoriesSection = buildMemoriesPromptForGeneration({ compact, standalone: !statsSection });
+        if (statsSection || memoriesSection) {
+            instructions += '\n' + [statsSection, memoriesSection].filter(Boolean).join('\n\n');
             if (includeContinuation) {
                 instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
             }
@@ -769,6 +776,8 @@ export function generateContextualSummary() {
     try {
         const stats = buildStatsContextSummary();
         if (stats) summary += stats + '\n';
+        const memories = buildMemoriesContextSummary();
+        if (memories) summary += memories + '\n';
     } catch (e) {
         console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }

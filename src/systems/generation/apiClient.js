@@ -29,6 +29,7 @@ import { renderInfoBox } from '../rendering/infoBox.js';
 import { removeLocks } from './lockManager.js';
 import { applyCharacterAliases } from '../features/characterAliases.js';
 import { applyAIStatUpdates } from '../features/characterStats.js';
+import { applyAIMemories } from '../features/characterMemories.js';
 import { renderThoughts, updateChatThoughts } from '../rendering/thoughts.js';
 import { renderQuests } from '../rendering/quests.js';
 import { i18n } from '../../core/i18n.js';
@@ -356,6 +357,13 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
                     applyAIStatUpdates(parsedData.stats, chat.length - 1);
                 } catch (e) {
                     console.warn('[Dooms Tracker] Stats: applying AI update failed', e);
+                }
+            }
+            if (parsedData.memories) {
+                try {
+                    applyAIMemories(parsedData.memories, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
             // Update lastGeneratedData for display (regardless of message type)

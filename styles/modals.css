@@ -8206,3 +8206,133 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 }
 
 .rpg-stat-delete:hover { color: #e94560; }
+
+
+/* ============================================
+   CHARACTER WORKSHOP — MEMORIES TAB
+   ============================================ */
+#character-workshop-popup .cw-mem-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: var(--modal-font-small, 0.8rem);
+    color: rgba(234, 234, 234, 0.6);
+}
+
+#character-workshop-popup .cw-mem-campaign {
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--cw-accent, #e94560) 50%, transparent);
+    color: var(--rpg-text, #eaeaea);
+}
+
+#character-workshop-popup .cw-mem-off { color: #f0c040; }
+
+#character-workshop-popup .cw-mem-empty {
+    padding: 14px;
+    text-align: center;
+    font-size: var(--modal-font-small, 0.8rem);
+    color: rgba(234, 234, 234, 0.5);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+}
+
+#character-workshop-popup #cw-mem-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+#character-workshop-popup .cw-mem-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto 28px;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+#character-workshop-popup .cw-mem-row.is-important {
+    border-color: rgba(240, 192, 64, 0.35);
+    background: rgba(240, 192, 64, 0.06);
+}
+
+#character-workshop-popup .cw-mem-row.is-faded .cw-mem-text { opacity: 0.45; }
+
+#character-workshop-popup .cw-mem-star {
+    width: 26px;
+    height: 26px;
+    font-size: 1rem;
+    line-height: 1;
+    color: rgba(234, 234, 234, 0.4);
+    background: none;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#character-workshop-popup .cw-mem-star:hover { color: #f0c040; background: rgba(240, 192, 64, 0.1); }
+
+#character-workshop-popup .cw-mem-row.is-important .cw-mem-star { color: #f0c040; }
+
+#character-workshop-popup .cw-mem-text {
+    font-size: 0.86rem;
+    line-height: 1.35;
+    color: var(--rpg-text, #eaeaea);
+    word-break: break-word;
+    cursor: text;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+#character-workshop-popup .cw-mem-text:hover,
+#character-workshop-popup .cw-mem-text:focus-visible { background: rgba(255, 255, 255, 0.05); outline: none; }
+
+#character-workshop-popup .cw-mem-edit { width: 100%; font-size: 0.86rem; }
+
+#character-workshop-popup .cw-mem-tags { display: inline-flex; gap: 4px; }
+
+#character-workshop-popup .cw-mem-tag {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0 5px;
+    border-radius: 4px;
+    color: rgba(234, 234, 234, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+#character-workshop-popup .cw-mem-tag.is-faded { border-style: dashed; }
+
+#character-workshop-popup .cw-mem-add {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+#character-workshop-popup .cw-mem-add-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#character-workshop-popup .cw-mem-important-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.8rem;
+    color: #f0c040;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#character-workshop-popup .cw-mem-error { flex: 1; font-size: 0.78rem; color: #ff8a8a; }

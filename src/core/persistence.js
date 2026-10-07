@@ -583,6 +583,8 @@ export function saveChatData({ immediate = false } = {}) {
         // Undo for the last AI stat update (characterStats.js) — consumed
         // when that reply is swiped or regenerated.
         statsUndo: chat_metadata.dooms_tracker?.statsUndo || null,
+        // Undo for the memories the last reply added (characterMemories.js).
+        memoriesUndo: chat_metadata.dooms_tracker?.memoriesUndo || null,
         timestamp: Date.now()
     };
     // Persist per-chat character tracking data when enabled
