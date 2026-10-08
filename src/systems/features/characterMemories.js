@@ -1,10 +1,10 @@
 /**
  * Character Memories — storage and AI round-trip.
  *
- * NPCs (never the persona) keep one-line memories of important events. Like
- * the current stat values, memories belong to the active Lore Library
- * campaign, so every chat in a campaign shares them:
- *   extensionSettings.characterMemories[campaignKey][npcName] = [entry, ...]
+ * NPCs (never the persona) keep one-line memories of important events.
+ * Memories belong to the chat (see chatScope.js), so another chat with the
+ * same character starts without them:
+ *   chat_metadata.dooms_tracker.betterStats.characterMemories[npcName] = [entry, ...]
  *
  * The AI can only add memories (the "memories" key of the tracker JSON),
  * and at most ONE per reply: extra ones are dropped (an important one wins).
@@ -18,6 +18,7 @@ import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, chatRootView, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     DEFAULT_RECENT_LIMIT,
@@ -28,7 +29,7 @@ import {
     buildMemoriesPrompt,
     selectForPrompt,
 } from '../../utils/memoryModel.js';
-import { currentCampaignKey, getStatCharacters, notifyStatsChanged, PLAYER_WORDS } from './characterStats.js';
+import { getStatCharacters, notifyStatsChanged, PLAYER_WORDS } from './characterStats.js';
 
 export const MEMORIES_CHANGED_EVENT = 'dooms:memories-changed';
 export const MAX_MEMORIES_PER_REPLY = 1;
@@ -66,17 +67,8 @@ export function notifyMemoriesChanged(detail = {}) {
     } catch (e) { /* no window (tests) */ }
 }
 
-function bucket(campaignKey = currentCampaignKey(), create = false) {
-    if (!extensionSettings.characterMemories || typeof extensionSettings.characterMemories !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterMemories = {};
-    }
-    const root = extensionSettings.characterMemories;
-    if (!root[campaignKey] || typeof root[campaignKey] !== 'object') {
-        if (!create) return null;
-        root[campaignKey] = {};
-    }
-    return root[campaignKey];
+function bucket(create = false) {
+    return chatStore('characterMemories', create);
 }
 
 function findKey(obj, name) {
@@ -86,7 +78,7 @@ function findKey(obj, name) {
     return Object.keys(obj).find(k => k.toLowerCase() === lower);
 }
 
-/** The NPC's memories in the active campaign (live array — copy before editing). */
+/** The NPC's memories in the open chat (live array — copy before editing). */
 export function getMemories(name) {
     const b = bucket();
     const k = findKey(b, name);
@@ -95,7 +87,7 @@ export function getMemories(name) {
 }
 
 function listFor(name, create = true) {
-    const b = bucket(currentCampaignKey(), create);
+    const b = bucket(create);
     if (!b) return null;
     const k = findKey(b, name);
     if (k !== undefined) return b[k];
@@ -116,7 +108,7 @@ export function addMemory(name, text, { important = false, source = 'user', pers
     if (isDuplicateMemory(list, entry.text)) return { error: `${name} already remembers this.` };
     list.push(entry);
     if (persist) {
-        saveSettings();
+        saveChatScope();
         notifyMemoriesChanged({ name });
     }
     return entry;
@@ -131,7 +123,7 @@ export function updateMemory(name, id, changes = {}) {
         m.text = t;
     }
     if (typeof changes.important === 'boolean') m.important = changes.important;
-    saveSettings();
+    saveChatScope();
     notifyMemoriesChanged({ name });
     return true;
 }
@@ -142,14 +134,14 @@ export function deleteMemory(name, id) {
     const idx = list.findIndex(x => x.id === id);
     if (idx === -1) return false;
     list.splice(idx, 1);
-    saveSettings();
+    saveChatScope();
     notifyMemoriesChanged({ name });
     return true;
 }
 
-/** Forgets every memory of a deleted character, in every campaign. */
+/** Forgets every memory of a deleted character, in the open chat. */
 export function deleteMemoriesEverywhere(name) {
-    const root = extensionSettings.characterMemories;
+    const root = chatRootView('characterMemories');
     if (!root || !name) return;
     for (const b of Object.values(root)) {
         const k = findKey(b, name);
@@ -157,15 +149,9 @@ export function deleteMemoriesEverywhere(name) {
     }
 }
 
-/** Forgets the memories kept for a deleted campaign. */
-export function deleteCampaignMemories(campaignId) {
-    const root = extensionSettings.characterMemories;
-    if (root && campaignId && root[campaignId]) delete root[campaignId];
-}
-
-/** An alias merge: the variant's memories join the canonical character's, in every campaign. */
+/** An alias merge: the variant's memories join the canonical character's, in the open chat. */
 export function mergeMemories(canonical, variant) {
-    const root = extensionSettings.characterMemories;
+    const root = chatRootView('characterMemories');
     if (!root || !canonical || !variant) return;
     for (const b of Object.values(root)) {
         const vk = findKey(b, variant);
@@ -239,7 +225,7 @@ export function applyAIMemories(raw, messageIndex) {
     candidates.sort((a, b) => Number(b.starred) - Number(a.starred));
     // A Refresh of the same reply may already have added its one memory.
     const prevRec = chat_metadata?.dooms_tracker?.memoriesUndo;
-    const alreadyAdded = prevRec && prevRec.messageIndex === messageIndex && prevRec.campaign === currentCampaignKey()
+    const alreadyAdded = prevRec && prevRec.messageIndex === messageIndex && prevRec.campaign === CHAT_SCOPE
         ? (prevRec.added || []).length : 0;
     for (const { name, item } of candidates) {
         if (added.length + alreadyAdded >= MAX_MEMORIES_PER_REPLY) break;
@@ -247,7 +233,7 @@ export function applyAIMemories(raw, messageIndex) {
         if (res && res.id) added.push({ name, id: res.id });
     }
     if (!added.length) return 0;
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -260,7 +246,7 @@ export function applyAIMemories(raw, messageIndex) {
             };
         }
     } catch (e) { /* undo is best-effort */ }
-    saveSettings();
+    saveChatScope();
     notifyMemoriesChanged({ source: 'ai' });
     try { notifyStatsChanged({ source: 'memories' }); } catch (e) {}
     return added.length;
@@ -275,7 +261,7 @@ export function revertAIMemoriesForReplacedMessage(replacedIndex) {
         const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.memoriesUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         let removed = 0;
         for (const { name, id } of rec.added) {
             const list = listFor(name, false);
@@ -284,7 +270,7 @@ export function revertAIMemoriesForReplacedMessage(replacedIndex) {
             if (i !== -1) { list.splice(i, 1); removed++; }
         }
         if (removed) {
-            saveSettings();
+            saveChatScope();
             notifyMemoriesChanged({ source: 'undo' });
         }
         saveChatData();

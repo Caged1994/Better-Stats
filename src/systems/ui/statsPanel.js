@@ -2,7 +2,7 @@
  * Stats Panel — live view of a character's stats.
  *
  * Opened from the portrait right-click menu ("Stats"). Shows the states as
- * rings and the attributes as score tiles for the active campaign's current
+ * rings and the attributes as score tiles for the open chat's current
  * values, with a tab per character in the scene (the player's persona
  * first). Values can be edited by clicking them.
  *
@@ -268,7 +268,7 @@ function buildHtml({ popout }) {
     const head = `
         <header class="dsp-head" data-drag-handle>
             <span class="dsp-title"><i class="fa-solid fa-chart-simple"></i> Stats</span>
-            ${campaign ? `<span class="dsp-campaign" title="Current values belong to the active campaign">${escapeHtml(campaign)}</span>` : ''}
+            ${campaign ? `<span class="dsp-campaign" title="Active campaign — portraits and descriptions follow it; values belong to this chat">${escapeHtml(campaign)}</span>` : ''}
             <span class="dsp-spacer"></span>
             <button type="button" class="dsp-icon-btn${isRpgModeActive() ? ' is-on' : ''}" data-action="${isRpgModeActive() ? 'rpg-off' : 'rpg-on'}" title="RPG mode is ${isRpgModeActive() ? 'on — click to turn it off for this card' : 'off — click to turn it on'}"><i class="fa-solid fa-power-off"></i></button>
             ${popout
@@ -1037,7 +1037,7 @@ function bindRootListeners(root) {
         else if (action === 'dock') dockPopout();
         else if (action === 'reset' && selected) {
             const ok = (root.ownerDocument.defaultView || window).confirm(
-                `Reset ${selected.name}'s stats to their starting values${campaignLabel() ? ` in ${campaignLabel()}` : ''}?`,
+                `Reset ${selected.name}'s stats to their starting values in this chat?`,
             );
             if (ok) resetCurrentStatValues(selected.name, selected.isUser);
         }

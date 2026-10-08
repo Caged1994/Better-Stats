@@ -1,8 +1,8 @@
 /**
  * Experience, levels and the party — storage and AI round-trip.
  *
- * One progress record per character per Lore Library campaign:
- *   extensionSettings.characterProgress[campaignKey]["npc:Name"|"user:Name"] = record
+ * One progress record per character per chat (see chatScope.js):
+ *   chat_metadata.dooms_tracker.betterStats.characterProgress["npc:Name"|"user:Name"] = record
  * (record shape in src/utils/xpModel.js).
  *
  * - The persona and every NPC marked "in the party" share XP: each award
@@ -11,7 +11,7 @@
  *   size (small / medium / large / epic); the user's table turns it into XP.
  * - Completing a quest from the Quests panel gives the party XP too.
  * - Each level gained gives attribute points; spending one raises the
- *   attribute's value in this campaign by 1 (refundable).
+ *   attribute's value in this chat by 1 (refundable).
  * - NPCs get a level from the AI the first time they are in a scene
  *   ("levels" key), together with their generated stats, and again when
  *   their stats are regenerated.
@@ -22,8 +22,8 @@ import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, chatRootView, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import {
-    currentCampaignKey,
     statKey,
     notifyStatsChanged,
     getStatCharacters,
@@ -100,17 +100,8 @@ export function setXpSetting(key, value) {
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 
-function bucket(create = false, campaign = currentCampaignKey()) {
-    if (!extensionSettings.characterProgress || typeof extensionSettings.characterProgress !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterProgress = {};
-    }
-    const root = extensionSettings.characterProgress;
-    if (!root[campaign] || typeof root[campaign] !== 'object') {
-        if (!create) return null;
-        root[campaign] = {};
-    }
-    return root[campaign];
+function bucket(create = false) {
+    return chatStore('characterProgress', create);
 }
 
 function findKey(obj, key) {
@@ -138,7 +129,7 @@ function storedRaw(key) {
     return k !== undefined ? b[k] : null;
 }
 
-/** The character's record in the active campaign (a copy; defaults when none). */
+/** The character's record in the open chat (a copy; defaults when none). */
 export function getProgress(name, isUser = false) {
     return readByKey(statKey(name, isUser));
 }
@@ -156,7 +147,7 @@ export function hasLevel(name, isUser = false) {
 }
 
 function changed(detail) {
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ source: 'progress', ...detail });
 }
 
@@ -170,7 +161,7 @@ export function isPartyMember(name) {
     return getProgress(name, false).party;
 }
 
-/** Puts an NPC in or out of the party (this campaign). */
+/** Puts an NPC in or out of the party (this chat). */
 export function setPartyMember(name, on) {
     if (!name) return;
     const key = statKey(name, false);
@@ -291,7 +282,7 @@ function attribute(name, isUser, statId) {
     return stat && stat.kind === 'attribute' && stat.enabled !== false ? stat : null;
 }
 
-/** Spends one point on an attribute: its value in this campaign goes up by 1. */
+/** Spends one point on an attribute: its value in this chat goes up by 1. */
 export function spendPoint(name, isUser, statId) {
     const key = statKey(name, isUser);
     const r = readByKey(key);
@@ -326,7 +317,7 @@ export function refundPoint(name, isUser, statId) {
 // ─── Cleanup hooks ──────────────────────────────────────────────────────────
 
 export function deleteProgressEverywhere(name, isUser = false) {
-    const root = extensionSettings.characterProgress;
+    const root = chatRootView('characterProgress');
     if (!root || !name) return;
     const key = statKey(name, isUser).toLowerCase();
     for (const b of Object.values(root)) {
@@ -334,14 +325,9 @@ export function deleteProgressEverywhere(name, isUser = false) {
     }
 }
 
-export function deleteCampaignProgress(campaignId) {
-    const root = extensionSettings.characterProgress;
-    if (root && campaignId && root[campaignId]) delete root[campaignId];
-}
-
 /** Alias merge: the variant's record is kept only when the canonical has none. */
 export function mergeProgress(canonical, variant) {
-    const root = extensionSettings.characterProgress;
+    const root = chatRootView('characterProgress');
     if (!root || !canonical || !variant) return;
     const vKey = statKey(variant, false);
     const cKey = statKey(canonical, false);
@@ -376,7 +362,7 @@ export function requestLevelGeneration(name) {
     if (r.party) return;
     r.levelAsk = true;
     writeByKey(key, r);
-    saveSettings();
+    saveChatScope();
 }
 
 export function buildProgressPromptForGeneration({ compact = true, standalone = false } = {}) {
@@ -409,7 +395,7 @@ export function buildProgressContextSummary() {
 
 function recordSnapshots(snapshots, messageIndex) {
     if (!snapshots.length) return;
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (!chat_metadata) return;
         if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -495,7 +481,7 @@ export function revertAIProgressForReplacedMessage(replacedIndex) {
         const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.xpUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         let n = 0;
         for (const { key, before, after } of rec.snapshots || []) {
             if (JSON.stringify(storedRaw(key)) !== JSON.stringify(after)) continue;

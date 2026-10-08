@@ -49,6 +49,10 @@ globalThis.dispatchEvent = (e) => { events.push(e.type); return true; };
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const Eq = await import(`${DES}/src/systems/features/characterEquipment.js`);
 const Cd = await import(`${DES}/src/systems/features/characterConditions.js`);
@@ -128,10 +132,10 @@ Cd.applyAIConditions({ Elena: ['Tired'] }, chat.length - 1);
 Cd.addCondition('Elena', false, { name: 'Brave' });
 check('a list edited since the reply is left alone by a swipe', Cd.revertAIConditionsForReplacedMessage(chat.length - 1) === 0 && Cd.getConditions('Elena').length === 2);
 
-// ── 5. Per campaign, cleanup ──
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign has its own conditions', Cd.getConditions('Mastera', true).length === 0);
-extensionSettings.lorebook.activeCampaignId = null;
+// ── 5. Per chat, cleanup ──
+otherChat();
+check('another chat has its own conditions', Cd.getConditions('Mastera', true).length === 0);
+backToChat();
 Cd.setConditionsEnabled(false);
 check('switched off: no conditions in the prompt or modifiers', !pb.generateTrackerInstructions(false, false).includes('"conditions"') && Mod.getEffectiveStatValues('Mastera', true).modifiers.dex.total === 1);
 Cd.setConditionsEnabled(true);

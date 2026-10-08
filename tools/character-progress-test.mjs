@@ -2,7 +2,7 @@
 /**
  * Experience, levels, party and RPG mode test: the XP curve and AI parsing,
  * party-shared awards and level-ups, attribute points, NPC levels from the
- * AI, quest XP, swipe undo, campaigns and the RPG mode switch.
+ * AI, quest XP, swipe undo, chats and the RPG mode switch.
  *
  * Usage:  node tools/character-progress-test.mjs     (from the repo root)
  * Exit:   0 = pass, 1 = failure
@@ -49,6 +49,10 @@ globalThis.dispatchEvent = () => true;
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const Eq = await import(`${DES}/src/systems/features/characterEquipment.js`);
 const Ab = await import(`${DES}/src/systems/features/characterAbilities.js`);
@@ -185,14 +189,12 @@ check('XP off: quests give nothing', P.awardQuestXp('x', 'main') === null);
 P.setXpEnabled(true);
 
 // ── 8. Campaigns ──
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign starts fresh', P.getProgress('Mastera', true).level === 1 && !P.isPartyMember('Elena'));
+otherChat();
+check('another chat starts fresh', P.getProgress('Mastera', true).level === 1 && !P.isPartyMember('Elena'));
 P.awardPartyXp(100, { reason: 'c1' });
 check('it levels on its own', P.getProgress('Mastera', true).level === 2);
-extensionSettings.lorebook.activeCampaignId = null;
-check('the first campaign is untouched', P.getProgress('Mastera', true).level === 4);
-P.deleteCampaignProgress('camp1');
-check('deleting a campaign drops its progress', !extensionSettings.characterProgress.camp1);
+backToChat();
+check('the first chat is untouched', P.getProgress('Mastera', true).level === 4);
 
 // ── 9. RPG mode ──
 check('on by default', R.isRpgModeActive() && R.rpgModeSource() === 'default');
@@ -214,9 +216,43 @@ check('and on again', R.isRpgModeActive());
 
 // ── 10. Cleanup ──
 P.mergeProgress('Elena', 'Bram');
-check('alias merge keeps the canonical record', P.getProgress('Elena').party && !Object.keys(extensionSettings.characterProgress._base).some(k => k === 'npc:Bram'));
+check('alias merge keeps the canonical record', P.getProgress('Elena').party && !Object.keys(chat_metadata.dooms_tracker.betterStats.characterProgress).some(k => k === 'npc:Bram'));
 P.deleteProgressEverywhere('Elena');
 check('deleting a character drops its progress', !P.isPartyMember('Elena') && P.getProgress('Elena').xp === 0);
+
+// ── 11. Everything belongs to the chat ──
+const CS = await import(`${DES}/src/systems/features/chatScope.js`);
+const Mem = await import(`${DES}/src/systems/features/characterMemories.js`);
+const Cd = await import(`${DES}/src/systems/features/characterConditions.js`);
+const { saveChatData } = await import(`${DES}/src/core/persistence.js`);
+Eq.addItem('Mastera', true, { name: 'Lantern' });
+Mem.addMemory('Bram', 'Lost a bet to Mastera');
+Cd.addCondition('Mastera', true, { name: 'Tired' });
+Ab.addAbility('Mastera', true, { name: 'Lockpicking', type: 'ability' });
+S.setCurrentStatValue('Mastera', true, 'health', 33);
+P.awardXpTo('Mastera', true, 100, { reason: 'x' });
+const lvHere = P.getProgress('Mastera', true).level;
+saveChatData();
+check('saving the chat keeps its Better Stats data', !!chat_metadata.dooms_tracker.betterStats?.characterEquipment?.['user:Mastera']?.length);
+otherChat();
+check('a new chat: no equipment, memories, conditions or abilities', !Eq.getEquipment('Mastera', true).length && !Mem.getMemories('Bram').length && !Cd.getConditions('Mastera', true).length && !Ab.getAbilities('Mastera', true).length);
+check('a new chat: stats back to the starting values, level 1', S.getCurrentStatValues('Mastera', true).health === 100 && P.getProgress('Mastera', true).level === 1);
+check('a new chat asks for starting gear again', Eq.needsStartingGear('Mastera', true));
+backToChat();
+check('the first chat still has everything', Eq.getEquipment('Mastera', true).some(i => i.name === 'Lantern') && Mem.getMemories('Bram').length === 1 && S.getCurrentStatValues('Mastera', true).health === 33 && P.getProgress('Mastera', true).level === lvHere);
+check('nothing is kept in the global settings', !extensionSettings.characterEquipment && !extensionSettings.characterMemories && !extensionSettings.characterStatValues && !extensionSettings.characterProgress);
+// Migration of data from before (kept per campaign in the settings).
+otherChat();
+extensionSettings.characterMemories = { _base: { Bram: [{ id: 'm1', text: 'Old memory', important: false, source: 'ai' }] } };
+extensionSettings.characterEquipment = { _base: { 'user:Mastera': [{ id: 'e1', name: 'Old sword', icon: '🗡️' }] }, camp9: { 'user:Mastera': [] } };
+delete extensionSettings.betterStatsChatScoped;
+chat.length = 0;
+check('no migration into an empty chat', CS.migrateLegacyToChat() === false && !!extensionSettings.characterMemories);
+chat.push({ is_user: true, mes: 'a' }, { is_user: false, mes: 'b' });
+check('old data moves into the first chat with a story', CS.migrateLegacyToChat() === true && Mem.getMemories('Bram')[0].text === 'Old memory' && Eq.getEquipment('Mastera', true)[0].name === 'Old sword');
+check('...and leaves the settings', !extensionSettings.characterMemories && !extensionSettings.characterEquipment && extensionSettings.betterStatsChatScoped === true);
+backToChat();
+check('...only once', CS.migrateLegacyToChat() === false && !Eq.getEquipment('Mastera', true).some(i => i.name === 'Old sword'));
 
 if (failures) { console.error(`\n${failures} check(s) failed`); process.exit(1); }
 console.log('\nAll character-progress checks pass');

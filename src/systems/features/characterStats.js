@@ -7,10 +7,10 @@
  * when on, the AI updates it through the "stats" key of the tracker JSON.
  *
  * Where things live:
- *   - Sheet (definitions, base values, ai flags) — shared by every campaign:
+ *   - Sheet (definitions, base values, ai flags) — shared by every chat:
  *       extensionSettings.characterStatSheets.{npc|user}[name]
- *   - Current values — one set per campaign ("_base" when none is active):
- *       extensionSettings.characterStatValues[campaignKey]["npc:Name"][statId]
+ *   - Current values — one set per chat (see chatScope.js):
+ *       chat_metadata.dooms_tracker.betterStats.characterStatValues["npc:Name"][statId]
  *     A value that was never set reads as the base value.
  *   - NPCs start without values: the first reply they appear in asks the AI
  *     to generate their whole sheet to fit who they are (sheet.pending, or no
@@ -26,6 +26,7 @@ import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings, committedTrackerData, lastGeneratedData } from '../../core/state.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     resolveSheet,
@@ -87,17 +88,9 @@ function sheetStore(isUser, create = false) {
     return root[k];
 }
 
-function valueBucket(campaignKey, create = false) {
-    if (!extensionSettings.characterStatValues || typeof extensionSettings.characterStatValues !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterStatValues = {};
-    }
-    const root = extensionSettings.characterStatValues;
-    if (!root[campaignKey] || typeof root[campaignKey] !== 'object') {
-        if (!create) return null;
-        root[campaignKey] = {};
-    }
-    return root[campaignKey];
+/** The open chat's current values ({ "npc:Name": { statId: value } }). */
+function valueBucket(create = false) {
+    return chatStore('characterStatValues', create);
 }
 
 /** Case-insensitive own-key lookup. */
@@ -227,7 +220,7 @@ export function updateCustomStat(statId, changes = {}) {
 
 /**
  * Removes a custom stat from every character: its definition, every
- * character's starting value and AI tick, every campaign's current values,
+ * character's starting value and AI tick, the open chat's current values,
  * its colour and on/off entry.
  */
 export function deleteCustomStat(statId) {
@@ -244,13 +237,8 @@ export function deleteCustomStat(statId) {
             if (sheet?.ai) delete sheet.ai[statId];
         }
     }
-    const values = extensionSettings.characterStatValues;
-    if (values && typeof values === 'object') {
-        for (const bucket of Object.values(values)) {
-            if (!bucket) continue;
-            for (const v of Object.values(bucket)) if (v && typeof v === 'object') delete v[statId];
-        }
-    }
+    const values = valueBucket();
+    if (values) for (const v of Object.values(values)) if (v && typeof v === 'object') delete v[statId];
     if (extensionSettings.characterStatColors) delete extensionSettings.characterStatColors[statId];
     if (Array.isArray(extensionSettings.characterStatsDisabled)) {
         extensionSettings.characterStatsDisabled = extensionSettings.characterStatsDisabled.filter(id => id !== statId);
@@ -288,8 +276,8 @@ export function requestStatGeneration(name, stats = null) {
 
 /**
  * Saves a character's stat list (definitions, base values, ai flags) and
- * drops current values of custom stats that no longer exist, in every
- * campaign. Does not persist by itself when `persist` is false (the Workshop
+ * drops current values of custom stats that no longer exist, in the open
+ * chat. Does not persist by itself when `persist` is false (the Workshop
  * saves once at the end of its commit).
  */
 export function saveStatSheet(name, isUser, stats, { persist = true, pending = false } = {}) {
@@ -301,85 +289,71 @@ export function saveStatSheet(name, isUser, stats, { persist = true, pending = f
 
     const ids = new Set((stats || []).map(s => s.id));
     const key = statKey(name, isUser);
-    const root = extensionSettings.characterStatValues;
-    if (root && typeof root === 'object') {
-        for (const bucket of Object.values(root)) {
-            const vals = bucket && bucket[key];
-            if (!vals) continue;
-            for (const id of Object.keys(vals)) if (!ids.has(id)) delete vals[id];
-        }
-    }
+    const vals = valueBucket()?.[key];
+    if (vals) for (const id of Object.keys(vals)) if (!ids.has(id)) delete vals[id];
     if (persist) saveSettings();
     notifyStatsChanged({ key });
 }
 
-/** Removes a character's sheet and every current value, in every campaign. */
+/** Removes a character's sheet and its current values in the open chat. */
 export function deleteStatSheet(name, isUser = false, { persist = false } = {}) {
     if (!name) return;
     const store = sheetStore(isUser);
     const k = findKey(store, name);
     if (k !== undefined) delete store[k];
-    const root = extensionSettings.characterStatValues;
-    if (root && typeof root === 'object') {
+    const bucket = valueBucket();
+    if (bucket) {
         const prefix = `${ns(isUser)}:`;
         const lower = String(name).toLowerCase();
-        for (const bucket of Object.values(root)) {
-            if (!bucket || typeof bucket !== 'object') continue;
-            for (const vk of Object.keys(bucket)) {
-                if (vk.startsWith(prefix) && vk.slice(prefix.length).toLowerCase() === lower) delete bucket[vk];
-            }
+        for (const vk of Object.keys(bucket)) {
+            if (vk.startsWith(prefix) && vk.slice(prefix.length).toLowerCase() === lower) delete bucket[vk];
         }
     }
     if (persist) saveSettings();
     notifyStatsChanged({ key: statKey(name, isUser) });
 }
 
-/** Forgets the current values kept for a deleted campaign. */
-export function deleteCampaignStatValues(campaignId) {
-    const root = extensionSettings.characterStatValues;
-    if (root && typeof root === 'object' && campaignId && root[campaignId]) delete root[campaignId];
-}
-
 // ─── Current values ─────────────────────────────────────────────────────────
 
-function storedValues(name, isUser, campaignKey = currentCampaignKey()) {
-    const bucket = valueBucket(campaignKey);
+function storedValues(name, isUser) {
+    const bucket = valueBucket();
     if (!bucket) return null;
     const k = findKey(bucket, statKey(name, isUser));
     return k !== undefined ? bucket[k] : null;
 }
 
-/** { statId: value } for the active campaign, base filling the gaps. */
+/** { statId: value } for the open chat, base filling the gaps. */
 export function getCurrentStatValues(name, isUser = false, stats = null) {
     const list = stats || getStatSheet(name, isUser);
     return resolveCurrentValues(list, storedValues(name, isUser));
 }
 
-/** Sets one current value in the active campaign. Returns the stored value. */
+/** Sets one current value in the open chat. Returns the stored value. */
 export function setCurrentStatValue(name, isUser, statId, value, { persist = true, silent = false } = {}) {
     const stat = getStatSheet(name, isUser).find(s => s.id === statId);
     if (!stat) return null;
     const v = clampStatValue(stat, value);
     if (v === null) return null;
-    const bucket = valueBucket(currentCampaignKey(), true);
+    const bucket = valueBucket(true);
+    if (!bucket) return null;
     const key = statKey(name, isUser);
     const existing = findKey(bucket, key);
     const target = existing !== undefined ? existing : key;
     if (!bucket[target] || typeof bucket[target] !== 'object') bucket[target] = {};
     bucket[target][statId] = v;
-    if (persist) saveSettings();
+    if (persist) saveChatScope();
     if (!silent) notifyStatsChanged({ key });
     return v;
 }
 
-/** Puts every current value of the character back to its base, in the active campaign. */
+/** Puts every current value of the character back to its base, in the open chat. */
 export function resetCurrentStatValues(name, isUser = false) {
-    const bucket = valueBucket(currentCampaignKey());
+    const bucket = valueBucket();
     if (bucket) {
         const k = findKey(bucket, statKey(name, isUser));
         if (k !== undefined) delete bucket[k];
     }
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ key: statKey(name, isUser) });
 }
 
@@ -576,7 +550,7 @@ function buildTargets() {
 }
 
 /**
- * Applies the "stats" object of a fresh AI reply to the active campaign's
+ * Applies the "stats" object of a fresh AI reply to the open chat's
  * current values and records an undo for that message.
  * @param {*} rawStats - parsed or JSON string
  * @param {number} messageIndex - the reply's index in the chat
@@ -596,7 +570,7 @@ export function applyAIStatUpdates(rawStats, messageIndex) {
         return generatedCount;
     }
     for (const c of changes) writeCurrentByKey(c.key, c.statId, c.after);
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -609,7 +583,7 @@ export function applyAIStatUpdates(rawStats, messageIndex) {
             };
         }
     } catch (e) { /* undo is best-effort */ }
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ source: 'ai' });
     return changes.length + generatedCount;
 }
@@ -637,8 +611,8 @@ function applyGeneratedSheets(targets, generated) {
             if (stat) stat.base = c.after;
         }
         saveStatSheet(target.name, false, stats, { persist: false, pending: false });
-        // Fresh start in this campaign: current = the generated values.
-        const bucket = valueBucket(currentCampaignKey());
+        // Fresh start in this chat: current = the generated values.
+        const bucket = valueBucket();
         if (bucket) {
             const k = findKey(bucket, key);
             if (k !== undefined) delete bucket[k];
@@ -664,15 +638,12 @@ export function revertAIStatsForReplacedMessage(replacedIndex) {
         // already dropped it from the chat, hence the one-step tolerance).
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.statsUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         const todo = changesToRevert(rec.changes, readCurrentByKey);
         for (const c of todo) {
             if (typeof c.before === 'number') writeCurrentByKey(c.key, c.statId, c.before);
         }
-        if (todo.length) {
-            saveSettings();
-            notifyStatsChanged({ source: 'undo' });
-        }
+        if (todo.length) notifyStatsChanged({ source: 'undo' });
         saveChatData();
         return todo.length;
     } catch (e) {

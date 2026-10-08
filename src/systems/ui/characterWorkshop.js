@@ -77,7 +77,7 @@ import { DIALOGUE_COLOR_LIST } from '../../utils/dialogueColors.js';
 // every campaign, so it travels across version switches like colour/aliases.
 import { getStatSheet, saveStatSheet, deleteStatSheet, isStatGenerationPending, setStatEnabled, setStatColor, getDisabledStatIds, getStatColors, STATS_CHANGED_EVENT, addCustomStat, deleteCustomStat, getCustomStatDefinitions } from '../features/characterStats.js';
 import { clampStatValue, HUMAN_AVERAGE, HUMAN_PEAK, BUILTIN_STATES, isHexColor } from '../../utils/statsModel.js';
-// Character Memories (NPCs only): per campaign, edited live (no Save needed).
+// Character Memories (NPCs only): per chat, edited live (no Save needed).
 import {
     getMemories, addMemory, updateMemory, deleteMemory, deleteMemoriesEverywhere,
     getRecentLimit, isMemoriesEnabled, MEMORIES_CHANGED_EVENT,
@@ -3314,7 +3314,7 @@ function deleteCharacter(name) {
     // Aliases too — an orphaned alias entry would keep silently renaming a
     // future, unrelated character to this deleted one.
     if (extensionSettings.characterAliases) delete extensionSettings.characterAliases[name];
-    // Stat sheet and its per-campaign values; memories in every campaign.
+    // Stat sheet, and its values and memories in the open chat.
     deleteStatSheet(name, false);
     deleteMemoriesEverywhere(name);
     deleteEquipmentEverywhere(name, false);

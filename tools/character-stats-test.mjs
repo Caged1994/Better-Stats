@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Character Stats test: the pure model, storage per campaign, the AI
+ * Character Stats test: the pure model, storage per chat, the AI
  * round-trip (prompt -> parse -> apply) and the swipe undo.
  *
  * Usage:  node tools/character-stats-test.mjs     (from the repo root)
@@ -48,6 +48,10 @@ globalThis.dispatchEvent = (e) => { events.push(e.type); return true; };
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const M = await import(`${DES}/src/utils/statsModel.js`);
 const { parseResponse } = await import(`${DES}/src/systems/generation/parser.js`);
@@ -102,14 +106,14 @@ check('custom stats are not stored in the sheet', !('custom' in extensionSetting
 check('base value saved', S.getStatSheet('Mastera', true).find(s => s.id === 'str').base === 70);
 check('changes broadcast an event', events.includes(S.STATS_CHANGED_EVENT));
 
-// ── 3. Current values are per campaign; base is shared ──
+// ── 3. Current values are per chat; base is shared ──
 check('current falls back to base', S.getCurrentStatValues('Mastera', true).str === 70);
 S.setCurrentStatValue('Mastera', true, 'satiety', 40);
-check('current value set (no campaign)', S.getCurrentStatValues('Mastera', true).satiety === 40);
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign starts from the base', S.getCurrentStatValues('Mastera', true).satiety === 80);
+check('current value set (this chat)', S.getCurrentStatValues('Mastera', true).satiety === 40);
+otherChat();
+check('another chat starts from the base', S.getCurrentStatValues('Mastera', true).satiety === 80);
 S.setCurrentStatValue('Mastera', true, 'satiety', 10);
-extensionSettings.lorebook.activeCampaignId = null;
+backToChat();
 check('switching back keeps each campaign\'s own value', S.getCurrentStatValues('Mastera', true).satiety === 40);
 check('values are clamped', S.setCurrentStatValue('Mastera', true, 'str', 999) === 100);
 S.setCurrentStatValue('Mastera', true, 'str', 70);
@@ -192,12 +196,10 @@ S.setCurrentStatValue('Elena', false, sanity.id, 44);
 S.deleteCustomStat(sanity.id);
 check('deleting a custom stat removes it from everyone', !S.getStatSheet('Mastera', true).some(s => s.id === sanity.id) && !S.getStatSheet('Elena').some(s => s.id === sanity.id));
 check('...and drops every current value',
-    !Object.values(extensionSettings.characterStatValues).some(b => Object.values(b).some(v => sanity.id in v)));
-S.deleteCampaignStatValues('camp1');
-check('deleting a campaign drops its values', !extensionSettings.characterStatValues.camp1);
+    !Object.values(chat_metadata.dooms_tracker.betterStats.characterStatValues).some(v => sanity.id in v));
 S.deleteStatSheet('Mastera', true);
 check('deleting a character drops sheet and values',
-    !extensionSettings.characterStatSheets.user.Mastera && !Object.values(extensionSettings.characterStatValues).some(b => 'user:Mastera' in b));
+    !extensionSettings.characterStatSheets.user.Mastera && !("user:Mastera" in chat_metadata.dooms_tracker.betterStats.characterStatValues));
 
 if (failures) { console.error(`\n${failures} character-stats check(s) failed`); process.exit(1); }
 console.log('\nAll character-stats checks pass');

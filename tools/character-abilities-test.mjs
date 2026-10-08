@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Spells & Abilities test, plus editing entries: storage per campaign, AI
+ * Spells & Abilities test, plus editing entries: storage per chat, AI
  * round-trip, locks, passive effects, starting abilities, swipe undo, and
  * the edit functions for items, conditions and abilities.
  *
@@ -49,6 +49,10 @@ globalThis.dispatchEvent = (e) => { events.push(e.type); return true; };
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const Eq = await import(`${DES}/src/systems/features/characterEquipment.js`);
 const Ab = await import(`${DES}/src/systems/features/characterAbilities.js`);
@@ -91,9 +95,9 @@ const skin = Ab.addAbility('Mastera', true, { icon: '🛡️', name: 'Iron skin'
 check('ability added by hand', skin.id && skin.type === 'ability' && skin.aiCanRemove === false);
 check('a duplicate is refused', !!Ab.addAbility('Mastera', true, { name: 'iron SKIN' }).error);
 check('passive effects always apply', Mod.getEffectiveStatValues('Mastera', true).values.con === 12);
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign has its own list', Ab.getAbilities('Mastera', true).length === 0);
-extensionSettings.lorebook.activeCampaignId = null;
+otherChat();
+check('another chat has its own list', Ab.getAbilities('Mastera', true).length === 0);
+backToChat();
 
 // ── 3. Prompt ──
 const instr = pb.generateTrackerInstructions(false, false);

@@ -2,8 +2,8 @@
  * Spells & Abilities — storage and AI round-trip.
  *
  * Every character (persona and NPCs) has a list of spells and abilities per
- * Lore Library campaign:
- *   extensionSettings.characterAbilities[campaignKey]["npc:Name"|"user:Name"] = [entry, ...]
+ * chat (see chatScope.js):
+ *   chat_metadata.dooms_tracker.betterStats.characterAbilities["npc:Name"|"user:Name"] = [entry, ...]
  *
  * The AI adds entries through an "abilities" key in the tracker JSON and can
  * remove only those whose aiCanRemove is on. Passive effects always apply
@@ -17,6 +17,7 @@
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, chatRootView, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_ABILITIES,
@@ -29,7 +30,7 @@ import {
     formatAbilities,
 } from '../../utils/abilityModel.js';
 import { cleanIcon } from '../../utils/equipmentModel.js';
-import { currentCampaignKey, getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
+import { getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
 import { resolveTarget, resolveEffectsFor, describeEffects } from './characterEquipment.js';
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -47,17 +48,7 @@ export function setAbilitiesEnabled(on) {
 // ─── Storage ────────────────────────────────────────────────────────────────
 
 function rootBucket(rootKey, create) {
-    if (!extensionSettings[rootKey] || typeof extensionSettings[rootKey] !== 'object') {
-        if (!create) return null;
-        extensionSettings[rootKey] = {};
-    }
-    const root = extensionSettings[rootKey];
-    const ck = currentCampaignKey();
-    if (!root[ck] || typeof root[ck] !== 'object') {
-        if (!create) return null;
-        root[ck] = {};
-    }
-    return root[ck];
+    return chatStore(rootKey, create);
 }
 
 function findKey(obj, key) {
@@ -77,14 +68,14 @@ function listByKey(key, create = false) {
     return b[key];
 }
 
-/** The character's spells and abilities in the active campaign (live array). */
+/** The character's spells and abilities in the open chat (live array). */
 export function getAbilities(name, isUser = false) {
     const list = listByKey(statKey(name, isUser));
     return Array.isArray(list) ? list : [];
 }
 
 function changed(detail) {
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ source: 'abilities', ...detail });
 }
 
@@ -133,7 +124,7 @@ export function removeAbility(name, isUser, id) {
 export function deleteAbilitiesEverywhere(name, isUser = false) {
     const key = statKey(name, isUser).toLowerCase();
     for (const rootKey of ['characterAbilities', 'characterAbilitiesSeeded']) {
-        const root = extensionSettings[rootKey];
+        const root = chatRootView(rootKey);
         if (!root || !name) continue;
         for (const b of Object.values(root)) {
             for (const k of Object.keys(b || {})) if (k.toLowerCase() === key) delete b[k];
@@ -141,15 +132,8 @@ export function deleteAbilitiesEverywhere(name, isUser = false) {
     }
 }
 
-export function deleteCampaignAbilities(campaignId) {
-    for (const rootKey of ['characterAbilities', 'characterAbilitiesSeeded']) {
-        const root = extensionSettings[rootKey];
-        if (root && campaignId && root[campaignId]) delete root[campaignId];
-    }
-}
-
 export function mergeAbilities(canonical, variant) {
-    const root = extensionSettings.characterAbilities;
+    const root = chatRootView('characterAbilities');
     if (!root || !canonical || !variant) return;
     const vKey = statKey(variant, false);
     const cKey = statKey(canonical, false);
@@ -245,7 +229,7 @@ export function applyAIAbilities(raw, messageIndex) {
     console.log(`[Dooms Tracker] Abilities: ${result.added} added, ${result.removed} removed${result.blocked.length ? `, ${result.blocked.length} locked kept` : ''}`);
     for (const a of asked) setSeeded(a.key, true);
     if (!snapshots.length && !asked.length) return result;
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -278,7 +262,7 @@ export function revertAIAbilitiesForReplacedMessage(replacedIndex) {
         const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.abilitiesUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         let n = 0;
         for (const { key, before, after } of rec.snapshots || []) {
             const live = listByKey(key, true);

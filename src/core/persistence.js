@@ -593,6 +593,9 @@ export function saveChatData({ immediate = false } = {}) {
         abilitiesUndo: chat_metadata.dooms_tracker?.abilitiesUndo || null,
         // Undo for the XP and NPC levels of the last reply (characterProgress.js).
         xpUndo: chat_metadata.dooms_tracker?.xpUndo || null,
+        // Better Stats data that belongs to this chat — current stat values,
+        // memories, equipment, conditions, abilities, XP (chatScope.js).
+        betterStats: chat_metadata.dooms_tracker?.betterStats || {},
         // RPG mode set for this chat (rpgMode.js): true / false, or absent to follow the card.
         rpgMode: typeof chat_metadata.dooms_tracker?.rpgMode === 'boolean' ? chat_metadata.dooms_tracker.rpgMode : undefined,
         timestamp: Date.now()

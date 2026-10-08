@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Character Memories test: the pure model, storage per campaign, the AI
+ * Character Memories test: the pure model, storage per chat, the AI
  * round-trip (prompt -> parse -> add) and the swipe undo.
  *
  * Usage:  node tools/character-memories-test.mjs     (from the repo root)
@@ -48,6 +48,10 @@ globalThis.dispatchEvent = (e) => { events.push(e.type); return true; };
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const M = await import(`${DES}/src/utils/memoryModel.js`);
 const Mem = await import(`${DES}/src/systems/features/characterMemories.js`);
@@ -88,15 +92,15 @@ check('AI shapes are normalised', M.normalizeAIMemories({ Elena: ['a', { text: '
     && M.normalizeAIMemories([{ name: 'Elena', memory: 'c' }])[0].items[0].text === 'c'
     && M.normalizeAIMemories('{"Elena":"d"}')[0].items[0].text === 'd');
 
-// ── 2. Storage per campaign ──
+// ── 2. Storage per chat ──
 const added = Mem.addMemory('Elena', 'Met Mastera at the crossroads');
 check('memory added by hand', added.id && added.source === 'user');
 check('a repeat is refused', !!Mem.addMemory('Elena', 'met mastera at the crossroads.').error);
 check('an empty one is refused', !!Mem.addMemory('Elena', '   ').error);
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign has its own memories', Mem.getMemories('Elena').length === 0);
+otherChat();
+check('another chat has its own memories', Mem.getMemories('Elena').length === 0);
 Mem.addMemory('Elena', 'Fought the Ash King');
-extensionSettings.lorebook.activeCampaignId = null;
+backToChat();
 check('...and switching back finds the first ones', Mem.getMemories('Elena').length === 1 && Mem.getMemories('Elena')[0].text.startsWith('Met'));
 Mem.updateMemory('Elena', added.id, { important: true, text: 'Met Mastera at the old crossroads' });
 check('a memory can be starred and edited', Mem.getMemories('Elena')[0].important && Mem.getMemories('Elena')[0].text.includes('old'));
@@ -141,11 +145,9 @@ Mem.setRecentLimit(500);
 check('recent limit is clamped', Mem.getRecentLimit() === 50);
 Mem.setRecentLimit(8);
 Mem.mergeMemories('Elena', 'Elly');
-extensionSettings.characterMemories._base.Elly = [{ id: 'x1', text: 'Elly memory', important: false, source: 'ai' }];
+chat_metadata.dooms_tracker.betterStats.characterMemories.Elly = [{ id: 'x1', text: 'Elly memory', important: false, source: 'ai' }];
 Mem.mergeMemories('Elena', 'Elly');
-check('alias merge moves memories to the canonical character', Mem.getMemories('Elena').some(m => m.text === 'Elly memory') && !extensionSettings.characterMemories._base.Elly);
-Mem.deleteCampaignMemories('camp1');
-check('deleting a campaign drops its memories', !extensionSettings.characterMemories.camp1);
+check('alias merge moves memories to the canonical character', Mem.getMemories('Elena').some(m => m.text === 'Elly memory') && !chat_metadata.dooms_tracker.betterStats.characterMemories.Elly);
 Mem.deleteMemoriesEverywhere('Elena');
 check('deleting a character drops its memories', Mem.getMemories('Elena').length === 0);
 

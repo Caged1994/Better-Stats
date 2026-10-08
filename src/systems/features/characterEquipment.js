@@ -2,9 +2,8 @@
  * Character Equipment — storage and AI round-trip.
  *
  * Every character (persona and NPCs) carries items shown in the Stats panel.
- * Like current stat values, equipment belongs to the active Lore Library
- * campaign:
- *   extensionSettings.characterEquipment[campaignKey]["npc:Name"|"user:Name"] = [item, ...]
+ * Equipment belongs to the chat (see chatScope.js):
+ *   chat_metadata.dooms_tracker.betterStats.characterEquipment["npc:Name"|"user:Name"] = [item, ...]
  *
  * The AI adds and removes items through an "equipment" key in the tracker
  * JSON. It can only remove items whose aiCanRemove is on; the others are
@@ -12,7 +11,7 @@
  *
  * Starting gear: a character whose list is empty is asked about once — the
  * AI adds what they already carry, from their description and the scene.
- * extensionSettings.characterEquipmentSeeded[campaignKey][key] is true once
+ * betterStats.characterEquipmentSeeded[key] is true once
  * asked, or 'request' when the user asked for it again from the panel. Swiping or regenerating a reply undoes its changes
  * (chat_metadata.dooms_tracker.equipmentUndo).
  *
@@ -22,6 +21,7 @@ import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, chatRootView, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_ITEMS,
@@ -36,7 +36,6 @@ import {
 } from '../../utils/equipmentModel.js';
 import { parseEffects, formatEffects } from '../../utils/effectsModel.js';
 import {
-    currentCampaignKey,
     getStatCharacters,
     getStatSheet,
     statKey,
@@ -58,17 +57,8 @@ export function setEquipmentEnabled(on) {
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 
-function bucket(campaignKey = currentCampaignKey(), create = false) {
-    if (!extensionSettings.characterEquipment || typeof extensionSettings.characterEquipment !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterEquipment = {};
-    }
-    const root = extensionSettings.characterEquipment;
-    if (!root[campaignKey] || typeof root[campaignKey] !== 'object') {
-        if (!create) return null;
-        root[campaignKey] = {};
-    }
-    return root[campaignKey];
+function bucket(create = false) {
+    return chatStore('characterEquipment', create);
 }
 
 function findKey(obj, key) {
@@ -79,7 +69,7 @@ function findKey(obj, key) {
 }
 
 function listByKey(key, create = false) {
-    const b = bucket(currentCampaignKey(), create);
+    const b = bucket(create);
     if (!b) return null;
     const k = findKey(b, key);
     if (k !== undefined) return b[k];
@@ -88,7 +78,7 @@ function listByKey(key, create = false) {
     return b[key];
 }
 
-/** The character's items in the active campaign (live array; old items get qty/equipped/effects). */
+/** The character's items in the open chat (live array; old items get qty/equipped/effects). */
 export function getEquipment(name, isUser = false) {
     const list = listByKey(statKey(name, isUser));
     if (!Array.isArray(list)) return [];
@@ -107,7 +97,7 @@ export function describeEffects(name, isUser, effects) {
 }
 
 function changed(detail) {
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ source: 'equipment', ...detail });
 }
 
@@ -160,9 +150,9 @@ export function removeItem(name, isUser, id) {
     return true;
 }
 
-/** Forgets a deleted character's equipment, in every campaign. */
+/** Forgets a deleted character's equipment, in the open chat. */
 export function deleteEquipmentEverywhere(name, isUser = false) {
-    const root = extensionSettings.characterEquipment;
+    const root = chatRootView('characterEquipment');
     if (!root || !name) return;
     const key = statKey(name, isUser).toLowerCase();
     for (const b of Object.values(root)) {
@@ -170,16 +160,9 @@ export function deleteEquipmentEverywhere(name, isUser = false) {
     }
 }
 
-export function deleteCampaignEquipment(campaignId) {
-    const root = extensionSettings.characterEquipment;
-    if (root && campaignId && root[campaignId]) delete root[campaignId];
-    const seeded = extensionSettings.characterEquipmentSeeded;
-    if (seeded && campaignId && seeded[campaignId]) delete seeded[campaignId];
-}
-
 /** An alias merge: the variant's items join the canonical NPC's. */
 export function mergeEquipment(canonical, variant) {
-    const root = extensionSettings.characterEquipment;
+    const root = chatRootView('characterEquipment');
     if (!root || !canonical || !variant) return;
     const vKey = statKey(variant, false);
     const cKey = statKey(canonical, false);
@@ -196,17 +179,7 @@ export function mergeEquipment(canonical, variant) {
 // ─── Starting gear ──────────────────────────────────────────────────────────
 
 function seededBucket(create = false) {
-    if (!extensionSettings.characterEquipmentSeeded || typeof extensionSettings.characterEquipmentSeeded !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterEquipmentSeeded = {};
-    }
-    const root = extensionSettings.characterEquipmentSeeded;
-    const ck = currentCampaignKey();
-    if (!root[ck] || typeof root[ck] !== 'object') {
-        if (!create) return null;
-        root[ck] = {};
-    }
-    return root[ck];
+    return chatStore('characterEquipmentSeeded', create);
 }
 
 function seededState(key) {
@@ -344,7 +317,7 @@ export function applyAIEquipment(raw, messageIndex) {
         }
     }
     if (!snapshots.length && !asked.length) return result;
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -381,7 +354,7 @@ export function revertAIEquipmentForReplacedMessage(replacedIndex) {
         const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.equipmentUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         let n = 0;
         for (const { key, before, after } of rec.snapshots || []) {
             const live = listByKey(key, true);

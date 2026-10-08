@@ -2,8 +2,8 @@
  * Character Conditions — storage and AI round-trip.
  *
  * Temporary states (Poisoned, Wounded leg, Drunk, Blessed…) for every
- * character, persona included, per Lore Library campaign:
- *   extensionSettings.characterConditions[campaignKey]["npc:Name"|"user:Name"] = [condition, ...]
+ * character, persona included, per chat (see chatScope.js):
+ *   chat_metadata.dooms_tracker.betterStats.characterConditions["npc:Name"|"user:Name"] = [condition, ...]
  *
  * The AI adds and removes them through a "conditions" key in the tracker
  * JSON; the user adds and removes them in the Stats panel. Attribute effects
@@ -16,6 +16,7 @@
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
 import { isRpgModeActive } from './rpgMode.js';
+import { chatStore, chatRootView, saveChatScope, CHAT_SCOPE } from './chatScope.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_CONDITIONS,
@@ -27,7 +28,7 @@ import {
     formatConditions,
 } from '../../utils/conditionModel.js';
 import { cleanIcon } from '../../utils/equipmentModel.js';
-import { currentCampaignKey, getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
+import { getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
 import { resolveTarget, resolveEffectsFor, describeEffects } from './characterEquipment.js';
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -45,17 +46,7 @@ export function setConditionsEnabled(on) {
 // ─── Storage ────────────────────────────────────────────────────────────────
 
 function bucket(create = false) {
-    if (!extensionSettings.characterConditions || typeof extensionSettings.characterConditions !== 'object') {
-        if (!create) return null;
-        extensionSettings.characterConditions = {};
-    }
-    const root = extensionSettings.characterConditions;
-    const ck = currentCampaignKey();
-    if (!root[ck] || typeof root[ck] !== 'object') {
-        if (!create) return null;
-        root[ck] = {};
-    }
-    return root[ck];
+    return chatStore('characterConditions', create);
 }
 
 function findKey(obj, key) {
@@ -75,14 +66,14 @@ function listByKey(key, create = false) {
     return b[key];
 }
 
-/** The character's conditions in the active campaign (live array). */
+/** The character's conditions in the open chat (live array). */
 export function getConditions(name, isUser = false) {
     const list = listByKey(statKey(name, isUser));
     return Array.isArray(list) ? list : [];
 }
 
 function changed(detail) {
-    saveSettings();
+    saveChatScope();
     notifyStatsChanged({ source: 'conditions', ...detail });
 }
 
@@ -127,7 +118,7 @@ export function removeCondition(name, isUser, id) {
 }
 
 export function deleteConditionsEverywhere(name, isUser = false) {
-    const root = extensionSettings.characterConditions;
+    const root = chatRootView('characterConditions');
     if (!root || !name) return;
     const key = statKey(name, isUser).toLowerCase();
     for (const b of Object.values(root)) {
@@ -135,13 +126,8 @@ export function deleteConditionsEverywhere(name, isUser = false) {
     }
 }
 
-export function deleteCampaignConditions(campaignId) {
-    const root = extensionSettings.characterConditions;
-    if (root && campaignId && root[campaignId]) delete root[campaignId];
-}
-
 export function mergeConditions(canonical, variant) {
-    const root = extensionSettings.characterConditions;
+    const root = chatRootView('characterConditions');
     if (!root || !canonical || !variant) return;
     const vKey = statKey(variant, false);
     const cKey = statKey(canonical, false);
@@ -200,7 +186,7 @@ export function applyAIConditions(raw, messageIndex) {
     }
     console.log(`[Dooms Tracker] Conditions: ${result.added} added, ${result.removed} removed`);
     if (!snapshots.length) return result;
-    const campaign = currentCampaignKey();
+    const campaign = CHAT_SCOPE;
     try {
         if (chat_metadata) {
             if (!chat_metadata.dooms_tracker) chat_metadata.dooms_tracker = {};
@@ -229,7 +215,7 @@ export function revertAIConditionsForReplacedMessage(replacedIndex) {
         const idx = typeof replacedIndex === 'number' ? replacedIndex : lastIdx;
         if (rec.messageIndex !== idx && rec.messageIndex !== idx + 1) return 0;
         delete chat_metadata.dooms_tracker.conditionsUndo;
-        if (rec.campaign !== currentCampaignKey()) return 0;
+        if (rec.campaign !== CHAT_SCOPE) return 0;
         let n = 0;
         for (const { key, before, after } of rec.snapshots || []) {
             const live = listByKey(key, true);

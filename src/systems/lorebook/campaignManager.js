@@ -27,12 +27,8 @@ import {
     forgetBook,
     getActiveCampaignId as profilesActiveId,
 } from './campaignProfiles.js';
-import { deleteCampaignStatValues, notifyStatsChanged } from '../features/characterStats.js';
-import { deleteCampaignMemories, notifyMemoriesChanged } from '../features/characterMemories.js';
-import { deleteCampaignEquipment } from '../features/characterEquipment.js';
-import { deleteCampaignConditions } from '../features/characterConditions.js';
-import { deleteCampaignProgress } from '../features/characterProgress.js';
-import { deleteCampaignAbilities } from '../features/characterAbilities.js';
+import { notifyStatsChanged } from '../features/characterStats.js';
+import { notifyMemoriesChanged } from '../features/characterMemories.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -111,13 +107,6 @@ export async function deleteCampaign(id) {
         await setActiveCampaign(null, { silent: true });
     }
     const orphanCandidates = deleteCampaignProfiles(id);
-    // Character stats keep one set of current values per campaign.
-    deleteCampaignStatValues(id);
-    deleteCampaignMemories(id);
-    deleteCampaignEquipment(id);
-    deleteCampaignConditions(id);
-    deleteCampaignProgress(id);
-    deleteCampaignAbilities(id);
 
     delete extensionSettings.lorebook.campaigns[id];
 
@@ -341,7 +330,7 @@ export async function repaintAfterCampaignSwitch() {
     // LLM-written portrait prompts were derived from the previous campaign's
     // descriptions; a regeneration must not reuse them for the new versions.
     try { clearSessionAvatarPrompts(); } catch (e) {}
-    // Current stat values are per campaign: open stat views must repaint.
+    // Portraits and descriptions may change with the campaign: stat views repaint.
     try { notifyStatsChanged({ source: 'campaign' }); } catch (e) {}
     try { notifyMemoriesChanged({ source: 'campaign' }); } catch (e) {}
     // The data switch always happens; the DOM work is pointless (and can

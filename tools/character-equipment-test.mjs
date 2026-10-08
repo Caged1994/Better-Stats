@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Character Equipment test: the pure model, storage per campaign, the AI
+ * Character Equipment test: the pure model, storage per chat, the AI
  * round-trip (prompt -> parse -> add/remove), locked items and the swipe undo.
  *
  * Usage:  node tools/character-equipment-test.mjs     (from the repo root)
@@ -48,6 +48,10 @@ globalThis.dispatchEvent = (e) => { events.push(e.type); return true; };
 
 const { extensionSettings, committedTrackerData } = await import(`${DES}/src/core/state.js`);
 const { chat, chat_metadata } = await import(`${SANDBOX}/script.js`);
+// Data belongs to the chat: another chat is another dooms_tracker blob.
+const savedChats = [];
+const otherChat = () => { savedChats.push(chat_metadata.dooms_tracker); chat_metadata.dooms_tracker = {}; };
+const backToChat = () => { chat_metadata.dooms_tracker = savedChats.pop(); };
 const S = await import(`${DES}/src/systems/features/characterStats.js`);
 const M = await import(`${DES}/src/utils/equipmentModel.js`);
 const Eq = await import(`${DES}/src/systems/features/characterEquipment.js`);
@@ -103,14 +107,14 @@ const nested = M.normalizeAIEquipment({ Mastera: { add: [{ name: 'Potion', quant
 check('alternative field names are understood', nested[0].add[0].qty === 3 && nested[0].add[0].effects.STR === 1 && nested[0].equip[0] === 'Axe' && nested[0].unequip[0] === 'Bow' && nested[0].remove[0].qty === 1);
 check('the loadout separates equipped and backpack', M.formatLoadout([{ name: 'Sword', icon: '🗡️', equipped: true, effects: { str: 2 } }, { name: 'Potion', icon: '🧪', qty: 3 }], () => 'STR +2') === 'equipped: 🗡️ Sword (STR +2); backpack: 🧪 Potion ×3');
 
-// ── 2. Storage per campaign ──
+// ── 2. Storage per chat ──
 const sword = Eq.addItem('Mastera', true, { icon: '🗡️', name: "Father's sword", desc: 'Old but sharp', aiCanRemove: false });
 check('item added by hand', sword.id && sword.aiCanRemove === false && sword.source === 'user');
 check('a duplicate is refused', !!Eq.addItem('Mastera', true, { name: "father's SWORD" }).error);
 Eq.addItem('Mastera', true, { icon: '🔦', name: 'Torch', desc: 'Half burnt' });
-extensionSettings.lorebook.activeCampaignId = 'camp1';
-check('another campaign has its own equipment', Eq.getEquipment('Mastera', true).length === 0);
-extensionSettings.lorebook.activeCampaignId = null;
+otherChat();
+check('another chat has its own equipment', Eq.getEquipment('Mastera', true).length === 0);
+backToChat();
 check('...switching back finds it', Eq.getEquipment('Mastera', true).length === 2);
 check('persona and NPC lists are separate', Eq.getEquipment('Mastera', false).length === 0);
 
@@ -185,7 +189,7 @@ const shapes = {
 };
 for (const [label, body] of Object.entries(shapes)) {
     const before = Eq.getEquipment('Mastera', true).filter(i => i.name !== 'Spark stone');
-    extensionSettings.characterEquipment._base['user:Mastera'] = before;
+    chat_metadata.dooms_tracker.betterStats.characterEquipment['user:Mastera'] = before;
     const p = parseResponse('```json\n{"infoBox":{"location":{"value":"Cave"}},' + body + '}\n```\nStory');
     chat.push({ is_user: true, mes: 'x' }, { is_user: false, mes: 'y' });
     Eq.applyAIEquipment(p.equipment, chat.length - 1);
@@ -194,7 +198,7 @@ for (const [label, body] of Object.entries(shapes)) {
 }
 const legacy = parseResponse('```json\n{"inventory":{"onPerson":"sword","stored":{}}}\n```\nx');
 Eq.applyAIEquipment(legacy.equipment, 999);
-check('an old-style inventory does not invent characters', !Object.keys(extensionSettings.characterEquipment._base).some(k => /onperson|stored/i.test(k)));
+check('an old-style inventory does not invent characters', !Object.keys(chat_metadata.dooms_tracker.betterStats.characterEquipment).some(k => /onperson|stored/i.test(k)));
 check('a list never removes what it leaves out', Eq.getEquipment('Mastera', true).some(i => i.name === "Father's sword"));
 
 // ── 5. Editing + cleanup ──
@@ -202,14 +206,11 @@ const t = Eq.getEquipment('Mastera', true).find(i => i.name === 'Torch');
 Eq.updateItem('Mastera', true, t.id, { aiCanRemove: false });
 check('an item can be locked', Eq.getEquipment('Mastera', true).find(i => i.id === t.id).aiCanRemove === false);
 check('the user can remove a locked item', Eq.removeItem('Mastera', true, sword.id) && !Eq.getEquipment('Mastera', true).some(i => i.id === sword.id));
-extensionSettings.characterEquipment._base['npc:Elly'] = [{ id: 'e1', name: 'Dagger', icon: '🗡️', aiCanRemove: true }];
+chat_metadata.dooms_tracker.betterStats.characterEquipment['npc:Elly'] = [{ id: 'e1', name: 'Dagger', icon: '🗡️', aiCanRemove: true }];
 Eq.mergeEquipment('Elena', 'Elly');
-check('alias merge moves the items', Eq.getEquipment('Elena').some(i => i.name === 'Dagger') && !extensionSettings.characterEquipment._base['npc:Elly']);
+check('alias merge moves the items', Eq.getEquipment('Elena').some(i => i.name === 'Dagger') && !chat_metadata.dooms_tracker.betterStats.characterEquipment['npc:Elly']);
 Eq.deleteEquipmentEverywhere('Elena');
 check('deleting a character drops its items', Eq.getEquipment('Elena').length === 0);
-extensionSettings.characterEquipment.camp1 = { 'user:Mastera': [] };
-Eq.deleteCampaignEquipment('camp1');
-check('deleting a campaign drops its equipment', !extensionSettings.characterEquipment.camp1);
 
 if (failures) { console.error(`\n${failures} character-equipment check(s) failed`); process.exit(1); }
 console.log('\nAll character-equipment checks pass');
