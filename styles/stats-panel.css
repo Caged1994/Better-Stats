@@ -977,3 +977,136 @@ body.dooms-perf-mode #dooms-stats-panel {
 
 .dsp-ability .dsp-item-eff { color: #9ec5ff; }
 .dsp-ability .dsp-item-icon { background: rgba(120, 140, 255, 0.12); }
+
+/* ── Section tabs ───────────────────────────────────────────── */
+/* A compact hero leaves room for the section that matters. */
+.dsp-hero { padding: 8px; margin-bottom: 10px; }
+.dsp-hero-avatar { width: 44px; height: 44px; border-radius: 10px; }
+.dsp-hero-name { font-size: 15px; }
+
+.dsp-sections {
+    position: sticky;
+    top: -12px;
+    z-index: 4;
+    display: flex;
+    gap: 4px;
+    margin: 0 -12px 12px;
+    padding: 6px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: linear-gradient(180deg, var(--dsp-bg-2), var(--dsp-bg));
+    border-top: 1px solid var(--dsp-border);
+    border-bottom: 1px solid var(--dsp-border);
+}
+.dsp-sections::-webkit-scrollbar { display: none; }
+.is-popout .dsp-sections { top: -14px; margin: 0 -14px 12px; padding: 6px 14px; }
+
+.dsp-sec {
+    position: relative;
+    flex: 1 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 9px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--dsp-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.dsp-sec i { font-size: 12px; }
+.dsp-sec:hover { color: var(--dsp-text); background: var(--dsp-card-hover); }
+.dsp-sec.is-active {
+    color: var(--dsp-text);
+    background: color-mix(in srgb, var(--dsp-accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--dsp-accent) 55%, transparent);
+}
+.dsp-sec:focus-visible { outline: 2px solid var(--dsp-accent); outline-offset: 1px; }
+
+.dsp-sec-count {
+    min-width: 17px;
+    padding: 0 5px;
+    font-size: 10.5px;
+    line-height: 16px;
+    text-align: center;
+    border-radius: 999px;
+    color: var(--dsp-text);
+    background: rgba(255, 255, 255, 0.1);
+}
+.dsp-sec-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #7ee2a8;
+    box-shadow: 0 0 6px rgba(126, 226, 168, 0.8);
+}
+
+/* Narrow panel: icons only, the label comes back for the active tab. */
+@media (max-width: 440px) {
+    .dsp-sec .dsp-sec-label { display: none; }
+    .dsp-sec.is-active .dsp-sec-label { display: inline; }
+}
+#dooms-stats-panel .dsp-sec:not(.is-active) .dsp-sec-label { display: none; }
+#dooms-stats-panel .dsp-sec { flex: 1 1 0; min-width: 34px; }
+#dooms-stats-panel .dsp-sec.is-active { flex: 3 1 auto; }
+
+/* Inside a tab the section name is already on the tab: keep only the buttons. */
+.dsp-section-body .dsp-title-text { display: none; }
+.dsp-section-body .dsp-equip .dsp-section-title { margin-bottom: 8px; }
+
+.dsp-section-hint {
+    margin: 0 2px 10px;
+    font-size: 11.5px;
+    color: var(--dsp-muted);
+}
+
+.dsp-section-body .dsp-section:last-child { margin-bottom: 4px; }
+
+/* ── Memories in the panel ──────────────────────────────────── */
+.dsp-mems { display: flex; flex-direction: column; gap: 5px; }
+.dsp-mem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 6px 6px 4px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    border-radius: 9px;
+    background: var(--dsp-card);
+    border: 1px solid var(--dsp-border);
+}
+.dsp-mem.is-important { border-color: rgba(240, 192, 64, 0.4); background: linear-gradient(160deg, rgba(240, 192, 64, 0.08), var(--dsp-card)); }
+.dsp-mem.is-faded .dsp-mem-text { opacity: 0.45; }
+.dsp-mem-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dsp-mem-star {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--dsp-muted);
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.dsp-mem.is-important .dsp-mem-star { color: #f0c040; }
+.dsp-mem-star:hover { color: #f0c040; background: rgba(240, 192, 64, 0.1); }
+.dsp-mem-tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0 5px;
+    border-radius: 4px;
+    color: var(--dsp-muted);
+    border: 1px dashed var(--dsp-border);
+}

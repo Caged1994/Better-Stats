@@ -35,6 +35,8 @@ import {
     needsStartingAbilities, requestStartingAbilities, cancelStartingAbilities,
 } from '../features/characterAbilities.js';
 import { ABILITY_EMOJI, DEFAULT_SPELL_ICON, DEFAULT_ABILITY_ICON } from '../../utils/abilityModel.js';
+import { getMemories, updateMemory, deleteMemory, getRecentLimit, isMemoriesEnabled, MEMORIES_CHANGED_EVENT } from '../features/characterMemories.js';
+import { fadedIds } from '../../utils/memoryModel.js';
 import { getEffectiveStatValues } from '../features/characterModifiers.js';
 import { ITEM_EMOJI, DEFAULT_ICON, normalizeItem } from '../../utils/equipmentModel.js';
 import { CONDITION_EMOJI, DEFAULT_CONDITION_ICON } from '../../utils/conditionModel.js';
@@ -53,6 +55,25 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // editId: the entry being edited (null = adding a new one).
 const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', error: '' };
 const itemForm = { ...FORM_DEFAULTS };
+
+// Section tabs inside the panel. The last one used is remembered.
+const SECTIONS = [
+    { id: 'stats', label: 'Stats', icon: 'fa-heart-pulse' },
+    { id: 'attributes', label: 'Attributes', icon: 'fa-dumbbell' },
+    { id: 'equipment', label: 'Equipment', icon: 'fa-shield-halved' },
+    { id: 'abilities', label: 'Abilities', icon: 'fa-wand-sparkles' },
+    { id: 'memories', label: 'Memories', icon: 'fa-brain' },
+];
+const FORM_SECTION = { item: 'equipment', ability: 'abilities' };
+function getSection() {
+    const s = extensionSettings.statsPanelSection;
+    return SECTIONS.some(x => x.id === s) ? s : 'stats';
+}
+function setSection(id) {
+    if (extensionSettings.statsPanelSection === id) return;
+    extensionSettings.statsPanelSection = id;
+    try { saveSettings(); } catch (e) {}
+}
 function resetForm() { Object.assign(itemForm, FORM_DEFAULTS); }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -235,6 +256,49 @@ function buildHtml({ popout }) {
     const states = stats.filter(s => s.kind === 'state');
     const attrs = stats.filter(s => s.kind === 'attribute');
 
+    // Which sections exist for this character, with a count where useful.
+    const sections = [];
+    if (states.length) sections.push({ id: 'stats' });
+    if (attrs.length) sections.push({ id: 'attributes' });
+    if (isEquipmentEnabled()) sections.push({ id: 'equipment', count: getEquipment(selected.name, selected.isUser).length });
+    if (isAbilitiesEnabled()) sections.push({ id: 'abilities', count: getAbilities(selected.name, selected.isUser).length });
+    if (!selected.isUser && isMemoriesEnabled()) sections.push({ id: 'memories', count: getMemories(selected.name).length });
+    let section = getSection();
+    if (!sections.some(x => x.id === section)) section = sections[0]?.id || 'stats';
+    // Modifiers in effect, shown as a hint on the Attributes tab.
+    const boosted = attrs.filter(s => eff.modifiers[s.id]?.total).length;
+
+    const sectionBar = sections.length > 1 ? `
+        <nav class="dsp-sections" role="tablist" aria-label="Sections">
+            ${sections.map(sec => {
+                const def = SECTIONS.find(x => x.id === sec.id);
+                const on = sec.id === section;
+                const badge = sec.id === 'attributes' && boosted ? '<span class="dsp-sec-dot" title="Bonuses in effect"></span>'
+                    : (sec.count ? `<span class="dsp-sec-count">${sec.count}</span>` : '');
+                return `<button type="button" role="tab" class="dsp-sec${on ? ' is-active' : ''}" aria-selected="${on}" data-section="${sec.id}" title="${def.label}">
+                    <i class="fa-solid ${def.icon}"></i><span class="dsp-sec-label">${def.label}</span>${badge}</button>`;
+            }).join('')}
+        </nav>` : '';
+
+    let content = '';
+    if (section === 'stats') {
+        content = `<section class="dsp-section">
+            <div class="dsp-rings">${states.map(s => ringHtml(s, cur[s.id])).join('')}</div>
+        </section>`;
+    } else if (section === 'attributes') {
+        content = `<section class="dsp-section">
+            <p class="dsp-section-hint">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak · bonuses from equipped items, conditions and passive abilities are shown as +N</p>
+            <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id], eff.values[s.id], eff.modifiers[s.id])).join('')}</div>
+        </section>`;
+    } else if (section === 'equipment') {
+        content = equipmentHtml();
+    } else if (section === 'abilities') {
+        content = abilitiesHtml();
+    } else if (section === 'memories') {
+        content = memoriesHtml();
+    }
+    if (!sections.length) content = '<div class="dsp-empty">Everything is switched off in Settings → Stats &amp; Memories.</div>';
+
     return `
         ${head}
         ${tabsHtml}
@@ -245,7 +309,7 @@ function buildHtml({ popout }) {
                     <span class="dsp-hero-name">${escapeHtml(selected.name)}</span>
                     <span class="dsp-hero-sub">${selected.isUser ? 'Your character' : 'Character'}${campaign ? ` · ${escapeHtml(campaign)}` : ''}</span>
                 </div>
-                <button type="button" class="dsp-text-btn" data-action="reset" title="Put every value back to the starting values set in the Workshop">
+                <button type="button" class="dsp-text-btn" data-action="reset" title="Put every stat back to the starting values set in the Workshop">
                     <i class="fa-solid fa-rotate-left"></i> Reset
                 </button>
             </section>
@@ -253,19 +317,33 @@ function buildHtml({ popout }) {
             <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
             ${isConditionsEnabled() ? conditionsHtml() : ''}
-            ${states.length ? `<section class="dsp-section">
-                <h3 class="dsp-section-title">Stats</h3>
-                <div class="dsp-rings">${states.map(s => ringHtml(s, cur[s.id])).join('')}</div>
-            </section>` : ''}
-            ${attrs.length ? `<section class="dsp-section">
-                <h3 class="dsp-section-title">Attributes <span class="dsp-scale">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak</span></h3>
-                <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id], eff.values[s.id], eff.modifiers[s.id])).join('')}</div>
-            </section>` : ''}
-            ${!states.length && !attrs.length ? '<div class="dsp-empty">Every stat is switched off in Settings → Stats.</div>' : ''}
-            ${isEquipmentEnabled() ? equipmentHtml() : ''}
-            ${isAbilitiesEnabled() ? abilitiesHtml() : ''}
-            <p class="dsp-foot">Click a value to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do. Stats, starting values and AI permissions are set in the Workshop.</p>
+            ${sectionBar}
+            <div class="dsp-section-body" data-section="${section}">${content}</div>
+            <p class="dsp-foot">Click a value or a name to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do.</p>
         </div>`;
+}
+
+// ─── Memories (NPCs) ────────────────────────────────────────────────────────
+
+function memoriesHtml() {
+    const list = getMemories(selected.name);
+    const faded = fadedIds(list, getRecentLimit());
+    if (!list.length) {
+        return '<div class="dsp-items-empty">No memories yet. The AI adds one when something important happens to them — or add them in the Workshop\'s Memories tab.</div>';
+    }
+    return `
+        <section class="dsp-section dsp-memories">
+            <p class="dsp-section-hint">Newest first · ★ always remembered · faded ones are kept but no longer sent · add or rewrite them in the Workshop</p>
+            <div class="dsp-mems">
+                ${[...list].reverse().map(m => `
+                <div class="dsp-mem${m.important ? ' is-important' : ''}${faded.has(m.id) ? ' is-faded' : ''}" data-id="${escapeHtml(m.id)}">
+                    <button type="button" class="dsp-mem-star" title="${m.important ? 'Important — click to make it a normal memory' : 'Make it important'}">${m.important ? '★' : '☆'}</button>
+                    <span class="dsp-mem-text">${escapeHtml(m.text)}</span>
+                    ${faded.has(m.id) ? '<span class="dsp-mem-tag">faded</span>' : ''}
+                    <button type="button" class="dsp-item-remove dsp-mem-del" title="Delete memory"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('')}
+            </div>
+        </section>`;
 }
 
 // ─── Equipment ──────────────────────────────────────────────────────────────
@@ -348,6 +426,7 @@ function openEdit(kind, id) {
     const e = list.find(x => x.id === id);
     if (!e) return;
     resetForm();
+    if (FORM_SECTION[kind]) setSection(FORM_SECTION[kind]);
     Object.assign(itemForm, {
         open: true, kind, editId: id,
         icon: e.icon || '', name: e.name || '', desc: e.desc || '',
@@ -372,7 +451,7 @@ function equipmentHtml() {
     const formOpen = f.open && f.kind === 'item';
     return `
         <section class="dsp-section dsp-equip">
-            <h3 class="dsp-section-title">Equipment <span class="dsp-scale">${items.length || ''}</span>
+            <h3 class="dsp-section-title"><span class="dsp-title-text">Equipment <span class="dsp-scale">${items.length || ''}</span></span>
                 ${seeding ? '' : '<button type="button" class="dsp-text-btn dsp-item-new dsp-gear-btn" data-action="gear-request" title="Ask the AI, in its next reply, to add what this character already carries"><i class="fa-solid fa-wand-magic-sparkles"></i> Starting gear</button>'}
                 ${formOpen ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open" data-kind="item"><i class="fa-solid fa-plus"></i> Add item</button>`}</h3>
             ${seedNote}
@@ -443,7 +522,7 @@ function abilitiesHtml() {
         : '';
     return `
         <section class="dsp-section dsp-equip dsp-abilities">
-            <h3 class="dsp-section-title">Spells &amp; Abilities <span class="dsp-scale">${list.length || ''}</span>
+            <h3 class="dsp-section-title"><span class="dsp-title-text">Spells &amp; Abilities <span class="dsp-scale">${list.length || ''}</span></span>
                 ${seeding ? '' : '<button type="button" class="dsp-text-btn dsp-item-new" data-action="abl-request" title="Ask the AI, in its next reply, to add what this character already knows"><i class="fa-solid fa-wand-magic-sparkles"></i> Starting</button>'}
                 ${formOpen ? '' : `<button type="button" class="dsp-text-btn dsp-item-new${seeding ? '' : ' is-second'}" data-action="item-open" data-kind="ability"><i class="fa-solid fa-plus"></i> Add</button>`}</h3>
             ${seedNote}
@@ -704,6 +783,26 @@ function bindRootListeners(root) {
             renderAll();
             return;
         }
+        const sec = e.target.closest('.dsp-sec');
+        if (sec) {
+            setSection(sec.getAttribute('data-section'));
+            if (itemForm.open) resetForm();
+            renderAll();
+            const body = root.querySelector('.dsp-body');
+            const bar = root.querySelector('.dsp-sections');
+            if (body && bar && body.scrollTop > bar.offsetTop) body.scrollTop = bar.offsetTop;
+            return;
+        }
+        const mem = e.target.closest('.dsp-mem');
+        if (mem && selected) {
+            const id = mem.getAttribute('data-id');
+            if (e.target.closest('.dsp-mem-star')) {
+                const m = getMemories(selected.name).find(x => x.id === id);
+                if (m) updateMemory(selected.name, id, { important: !m.important });
+                return;
+            }
+            if (e.target.closest('.dsp-mem-del')) { deleteMemory(selected.name, id); return; }
+        }
         const emoji = e.target.closest('.dsp-emoji');
         if (emoji) { itemForm.icon = emoji.getAttribute('data-emoji'); renderAll(); return; }
         const ablRow = e.target.closest('.dsp-ability');
@@ -795,6 +894,7 @@ function bindRootListeners(root) {
 function bindGlobalListeners() {
     if (listenersBound) return;
     listenersBound = true;
+    window.addEventListener(MEMORIES_CHANGED_EVENT, () => requestAnimationFrame(() => renderAll()));
     window.addEventListener(STATS_CHANGED_EVENT, () => {
         // Collapse bursts (an AI update changes many values) into one paint.
         requestAnimationFrame(() => renderAll());
