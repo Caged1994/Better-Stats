@@ -22,6 +22,7 @@ import { mergeVariantIntoCanonicalProfiles } from '../lorebook/campaignProfiles.
 import { mergeMemories } from './characterMemories.js';
 import { mergeEquipment } from './characterEquipment.js';
 import { mergeConditions } from './characterConditions.js';
+import { mergeProgress } from './characterProgress.js';
 import { mergeAbilities } from './characterAbilities.js';
 
 /**
@@ -416,6 +417,7 @@ export async function adoptVariantAsAlias(canonical, variant) {
     try { mergeMemories(canonical, variant); } catch (e) {}
     try { mergeEquipment(canonical, variant); } catch (e) {}
     try { mergeConditions(canonical, variant); } catch (e) {}
+    try { mergeProgress(canonical, variant); } catch (e) {}
     try { mergeAbilities(canonical, variant); } catch (e) {}
     for (const store of ['characterColors', 'npcAvatars', 'npcAvatarsFullRes', 'npcAvatarHistory',
         'characterInjection', 'characterRelationships', 'characterKnives', 'heroPositions', 'characterAppearance',

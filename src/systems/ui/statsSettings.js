@@ -15,10 +15,26 @@ import {
     getCustomStatDefinitions,
     deleteCustomStat,
 } from '../features/characterStats.js';
-import { isMemoriesEnabled, setMemoriesEnabled, getRecentLimit, setRecentLimit } from '../features/characterMemories.js';
-import { isEquipmentEnabled, setEquipmentEnabled } from '../features/characterEquipment.js';
-import { isConditionsEnabled, setConditionsEnabled } from '../features/characterConditions.js';
-import { isAbilitiesEnabled, setAbilitiesEnabled } from '../features/characterAbilities.js';
+import { setMemoriesEnabled, getRecentLimit, setRecentLimit } from '../features/characterMemories.js';
+import { setEquipmentEnabled } from '../features/characterEquipment.js';
+import { setConditionsEnabled } from '../features/characterConditions.js';
+import { setAbilitiesEnabled } from '../features/characterAbilities.js';
+import { extensionSettings } from '../../core/state.js';
+import {
+    RPG_MODE_CHANGED_EVENT,
+    isRpgModeActive,
+    rpgModeSource,
+    getChatRpgMode,
+    getCardRpgMode,
+    getDefaultRpgMode,
+    setChatRpgMode,
+    setCardRpgMode,
+    setDefaultRpgMode,
+    currentCardKey,
+    currentCardName,
+} from '../features/rpgMode.js';
+import { getXpSettings, setXpSetting, setLevelsEnabled, setXpEnabled } from '../features/characterProgress.js';
+import { XP_SIZES } from '../../utils/xpModel.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -84,16 +100,18 @@ let bound = false;
 /** Renders the rows and wires them up (once). */
 export function initStatsSettings() {
     renderStatsSettings();
-    const abOn = document.getElementById('rpg-abilities-enabled');
-    if (abOn) abOn.checked = isAbilitiesEnabled();
-    const cdOn = document.getElementById('rpg-conditions-enabled');
-    if (cdOn) cdOn.checked = isConditionsEnabled();
-    const eqOn = document.getElementById('rpg-equipment-enabled');
-    if (eqOn) eqOn.checked = isEquipmentEnabled();
-    const memOn = document.getElementById('rpg-memories-enabled');
-    if (memOn) memOn.checked = isMemoriesEnabled();
+    // The switches show the feature's own setting (RPG mode is shown apart).
+    const flag = (id, key) => { const el = document.getElementById(id); if (el) el.checked = extensionSettings[key] !== false; };
+    flag('rpg-abilities-enabled', 'characterAbilitiesEnabled');
+    flag('rpg-conditions-enabled', 'characterConditionsEnabled');
+    flag('rpg-equipment-enabled', 'characterEquipmentEnabled');
+    flag('rpg-memories-enabled', 'characterMemoriesEnabled');
+    flag('rpg-levels-enabled', 'characterLevelsEnabled');
+    flag('rpg-xp-enabled', 'characterXpEnabled');
     const memRecent = document.getElementById('rpg-memories-recent');
     if (memRecent) memRecent.value = String(getRecentLimit());
+    renderXpSettings();
+    renderRpgModeSettings();
     if (bound) return;
     bound = true;
     document.addEventListener('change', (e) => {
@@ -106,6 +124,16 @@ export function initStatsSettings() {
         else if (el.id === 'rpg-abilities-enabled') setAbilitiesEnabled(el.checked);
         else if (el.id === 'rpg-memories-enabled') setMemoriesEnabled(el.checked);
         else if (el.id === 'rpg-memories-recent') { setRecentLimit(el.value); el.value = String(getRecentLimit()); }
+        else if (el.id === 'rpg-levels-enabled') setLevelsEnabled(el.checked);
+        else if (el.id === 'rpg-xp-enabled') setXpEnabled(el.checked);
+        else if (el.id === 'rpg-xp-per-level') { setXpSetting('perLevel', el.value); renderXpSettings(); }
+        else if (el.id === 'rpg-xp-points') { setXpSetting('pointsPerLevel', el.value); renderXpSettings(); }
+        else if (el.id === 'rpg-xp-quest-main') setXpSetting('questMain', el.value);
+        else if (el.id === 'rpg-xp-quest-optional') setXpSetting('questOptional', el.value);
+        else if (el.id && el.id.startsWith('rpg-xp-') && XP_SIZES.includes(el.id.slice(7))) { setXpSetting(el.id.slice(7), el.value); renderXpSettings(); }
+        else if (el.id === 'rpg-mode-default') setDefaultRpgMode(el.checked);
+        else if (el.id === 'rpg-mode-card') setCardRpgMode(el.value === 'on' ? true : el.value === 'off' ? false : null);
+        else if (el.id === 'rpg-mode-chat') setChatRpgMode(el.value === 'on' ? true : el.value === 'off' ? false : null);
     });
     document.addEventListener('input', (e) => {
         const el = e.target;
@@ -125,6 +153,7 @@ export function initStatsSettings() {
             }
         }
     });
+    window.addEventListener(RPG_MODE_CHANGED_EVENT, () => renderRpgModeSettings());
     // Changes made from the Workshop (or a reset here) repaint the list.
     window.addEventListener(STATS_CHANGED_EVENT, (e) => {
         if (e.detail?.source !== 'settings') return;
@@ -132,4 +161,42 @@ export function initStatsSettings() {
         if (active && active.classList && active.classList.contains('rpg-stat-color')) return;
         renderStatsSettings();
     });
+}
+
+/** The XP amounts, curve and quest sizes. */
+export function renderXpSettings() {
+    const x = getXpSettings();
+    const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = String(v); };
+    for (const size of XP_SIZES) set(`rpg-xp-${size}`, x.tiers[size]);
+    set('rpg-xp-per-level', x.perLevel);
+    set('rpg-xp-points', x.pointsPerLevel);
+    set('rpg-xp-quest-main', x.questMain);
+    set('rpg-xp-quest-optional', x.questOptional);
+    const hint = document.getElementById('rpg-xp-curve-hint');
+    if (hint) {
+        const p = x.perLevel;
+        hint.textContent = `Level × this amount to reach the next one: level 2 at ${p} XP, level 3 at ${p * 3}, level 4 at ${p * 6}…`;
+    }
+}
+
+/** The three RPG mode controls, for the chat and card open now. */
+export function renderRpgModeSettings() {
+    const def = document.getElementById('rpg-mode-default');
+    if (def) def.checked = getDefaultRpgMode();
+    const val = (v) => (v === true ? 'on' : v === false ? 'off' : '');
+    const card = document.getElementById('rpg-mode-card');
+    const hasCard = !!currentCardKey();
+    if (card) {
+        card.value = val(getCardRpgMode());
+        card.disabled = !hasCard;
+    }
+    const cardName = document.getElementById('rpg-mode-card-name');
+    if (cardName) cardName.textContent = hasCard && currentCardName() ? ` (${currentCardName()})` : '';
+    const chatSel = document.getElementById('rpg-mode-chat');
+    if (chatSel) chatSel.value = val(getChatRpgMode());
+    const status = document.getElementById('rpg-mode-status');
+    if (status) {
+        const from = { chat: 'set for this chat', card: 'set for this card', default: 'the default' }[rpgModeSource()];
+        status.textContent = `RPG mode is ${isRpgModeActive() ? 'ON' : 'OFF'} here (${from}).`;
+    }
 }

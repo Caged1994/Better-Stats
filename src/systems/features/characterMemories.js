@@ -17,6 +17,7 @@
 import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
+import { isRpgModeActive } from './rpgMode.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     DEFAULT_RECENT_LIMIT,
@@ -35,7 +36,7 @@ export const MAX_MEMORIES_PER_REPLY = 1;
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export function isMemoriesEnabled() {
-    return extensionSettings.enabled !== false && extensionSettings.characterMemoriesEnabled !== false;
+    return isRpgModeActive() && extensionSettings.characterMemoriesEnabled !== false;
 }
 
 export function setMemoriesEnabled(on) {

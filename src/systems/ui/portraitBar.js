@@ -44,6 +44,7 @@ import { escapeHtml } from '../../utils/html.js';
 import { parseTrackerJson } from '../../utils/trackerParse.js';
 import { schedule } from '../../core/scheduler.js';
 import { ensureSettingsUI } from '../../core/lazyUI.js';
+import { isProgressEnabled, hasLevel, getProgress } from '../features/characterProgress.js';
 
 /** Logs to the debug panel only when debugMode is on — getCharacterList runs on every render. */
 function debugLog(message, data = null) {
@@ -181,6 +182,12 @@ let _initialRenderDone = false;
 export function initPortraitBar() {
     // Don't double-init
     if ($('#dooms-portrait-bar-wrapper').length) return;
+
+    // Level badges follow XP, level-ups and RPG mode.
+    window.addEventListener('dooms:stats-changed', (e) => {
+        const src = e.detail?.source;
+        if (['progress', 'quest', 'ai', 'undo', 'settings', 'rpg-mode'].includes(src)) updatePortraitBar();
+    });
 
     const wrapperHtml = `
         <div id="dooms-portrait-bar-wrapper">
@@ -561,6 +568,16 @@ function renderPortraitBarNow() {
             ? `<span class="dooms-portrait-card-color-dot" style="background:${escapeHtml(charColor)};"></span>`
             : '';
         const youBadge = char.isUser ? '<span class="dooms-pb-you-badge">YOU</span>' : '';
+        // Level (Better Stats), top-right; ⬆ when attribute points wait to be assigned.
+        let levelBadge = '';
+        try {
+            if (isProgressEnabled() && hasLevel(char.name, !!char.isUser)) {
+                const pr = getProgress(char.name, !!char.isUser);
+                const up = pr.points > 0 ? ' dooms-pb-level-up' : '';
+                const tip = `Level ${pr.level}${pr.party || char.isUser ? ' · party' : ''}${pr.points ? ` · ${pr.points} point${pr.points === 1 ? '' : 's'} to assign` : ''}`;
+                levelBadge = `<span class="dooms-pb-level-badge${up}" title="${escapeHtml(tip)}">Lv ${pr.level}${pr.points ? ' ⬆' : ''}</span>`;
+            }
+        } catch (e) { /* levels are optional */ }
 
         let backFace = '';
         try {
@@ -592,6 +609,7 @@ function renderPortraitBarNow() {
                 ${face}
                 ${absentOverlay}
                 ${youBadge}
+                ${levelBadge}
                 ${injectingOverlay}
                 <div class="dooms-portrait-card-name">${colorDot}${nameEsc}</div>
                 ${backFace}

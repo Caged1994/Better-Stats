@@ -85,6 +85,7 @@ import {
 import { fadedIds } from '../../utils/memoryModel.js';
 import { deleteEquipmentEverywhere } from '../features/characterEquipment.js';
 import { deleteConditionsEverywhere } from '../features/characterConditions.js';
+import { deleteProgressEverywhere, requestLevelGeneration } from '../features/characterProgress.js';
 import { deleteAbilitiesEverywhere } from '../features/characterAbilities.js';
 
 /**
@@ -2881,6 +2882,7 @@ function commitDraft() {
     // whatever version is on the stage, for NPCs and personas alike.
     if (draft.dirty.stats) {
         saveStatSheet(name, draft.isUser, draft.stats, { persist: false, pending: !!draft.statsPending });
+        if (draft.statsPending && !draft.isUser) requestLevelGeneration(name);
         changed = true;
     }
 
@@ -3284,6 +3286,7 @@ function deleteCharacter(name) {
         deleteStatSheet(name, true);
         deleteEquipmentEverywhere(name, true);
         deleteConditionsEverywhere(name, true);
+        deleteProgressEverywhere(name, true);
         deleteAbilitiesEverywhere(name, true);
         saveOrWarn(saveSettings, 'settings');
         // A persona copied from an NPC shares the NPC's portrait file —
@@ -3316,6 +3319,7 @@ function deleteCharacter(name) {
     deleteMemoriesEverywhere(name);
     deleteEquipmentEverywhere(name, false);
     deleteConditionsEverywhere(name, false);
+    deleteProgressEverywhere(name, false);
     deleteAbilitiesEverywhere(name, false);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata. Without wiping those, the Roster grid (which

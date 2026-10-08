@@ -33,6 +33,7 @@ import { applyAIMemories } from '../features/characterMemories.js';
 import { applyAIEquipment, notifyBlockedRemovals } from '../features/characterEquipment.js';
 import { applyAIConditions } from '../features/characterConditions.js';
 import { applyAIAbilities } from '../features/characterAbilities.js';
+import { applyAIProgress } from '../features/characterProgress.js';
 import { renderThoughts, updateChatThoughts } from '../rendering/thoughts.js';
 import { renderQuests } from '../rendering/quests.js';
 import { i18n } from '../../core/i18n.js';
@@ -355,6 +356,14 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
             const lastMessage = chat && chat.length > 0 ? chat[chat.length - 1] : null;
             // Character Stats: the tracker call was given the current values,
             // so its "stats" are the new ones for this reply.
+            // Experience and NPC levels (before stats: see sillytavern.js).
+            if (parsedData.xp || parsedData.levels) {
+                try {
+                    applyAIProgress(parsedData.xp, parsedData.levels, chat.length - 1);
+                } catch (e) {
+                    console.warn('[Dooms Tracker] XP: applying AI update failed', e);
+                }
+            }
             if (parsedData.stats) {
                 try {
                     applyAIStatUpdates(parsedData.stats, chat.length - 1);
@@ -369,7 +378,7 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
                     console.warn('[Dooms Tracker] Memories: applying AI update failed', e);
                 }
             }
-            console.log(`[Dooms Tracker] Tracker update — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}`);
+            console.log(`[Dooms Tracker] Tracker update — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}, xp: ${parsedData.xp || 'no'}, levels: ${parsedData.levels || 'no'}`);
             if (parsedData.abilities) {
                 try {
                     notifyBlockedRemovals(applyAIAbilities(parsedData.abilities, chat.length - 1));

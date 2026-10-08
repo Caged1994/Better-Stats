@@ -92,6 +92,43 @@ function debugLog(message, data = null) {
         addDebugLog(message, data);
     }
 }
+/** Keys of the unified tracker object that are not trackers of their own. */
+const EXTRA_KEYS = ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells', 'xp', 'experience', 'levels'];
+const EXTRA_RESULT_KEYS = ['stats', 'memories', 'equipment', 'conditions', 'abilities', 'xp', 'levels'];
+
+/**
+ * Copies the Better Stats keys of a parsed tracker object into `result` as
+ * JSON strings (the first object that carries a key wins), with the aliases
+ * models use: inventory → equipment, skills/spells → abilities,
+ * experience → xp. Returns true when the object holds nothing but such keys.
+ */
+function extractExtraKeys(parsed, result) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const pick = (...names) => names.map(n => parsed[n]).find(v => v !== undefined && v !== null);
+    const src = {
+        stats: parsed.stats,
+        memories: parsed.memories,
+        equipment: pick('equipment', 'inventory'),
+        conditions: parsed.conditions,
+        abilities: pick('abilities', 'skills', 'spells'),
+        xp: pick('xp', 'experience'),
+        levels: parsed.levels,
+    };
+    for (const key of EXTRA_RESULT_KEYS) {
+        const v = src[key];
+        if (result[key] || v === undefined || v === null) continue;
+        // An XP award may come as a bare string ("medium: beat the bandits") or number.
+        if (typeof v === 'object' || (key === 'xp' && (typeof v === 'string' || typeof v === 'number'))) {
+            result[key] = JSON.stringify(v);
+        }
+    }
+    return Object.keys(parsed).every(k => EXTRA_KEYS.includes(k));
+}
+
+/** Whether anything at all was extracted. */
+function hasAnyResult(result) {
+    return !!(result.quests || result.infoBox || result.characterThoughts || EXTRA_RESULT_KEYS.some(k => result[k]));
+}
 /**
  * Parses the model response to extract the different data sections.
  * Extracts tracker data from markdown code blocks in the AI response.
@@ -115,7 +152,10 @@ export function parseResponse(responseText) {
         // Character Conditions (characterConditions.js): the "conditions" key.
         conditions: null,
         // Spells & Abilities (characterAbilities.js): the "abilities" key.
-        abilities: null
+        abilities: null,
+        // Experience (characterProgress.js): the "xp" award and NPC "levels".
+        xp: null,
+        levels: null
     };
     // DEBUG: Log full response for troubleshooting
     debugLog('[RPG Parser] ==================== PARSING AI RESPONSE ====================');
@@ -177,11 +217,8 @@ export function parseResponse(responseText) {
         // First, try to parse as unified JSON structure (new v3.1 format)
         if (extractedObjects.length === 1) {
             const parsed = repairJSON(extractedObjects[0]);
-            // Models sometimes call the equipment "inventory".
-            if (parsed && !parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
-            // ...and the abilities "skills" or "spells".
-            if (parsed && !parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
-            if (parsed && (parsed.quests || parsed.infoBox || parsed.characters || parsed.stats || parsed.memories || parsed.equipment || parsed.conditions || parsed.abilities)) {
+            if (parsed && typeof parsed === 'object') extractExtraKeys(parsed, result);
+            if (parsed && (parsed.quests || parsed.infoBox || parsed.characters || hasAnyResult(result))) {
                 if (parsed.quests) {
                     result.quests = JSON.stringify(parsed.quests);
                 }
@@ -191,22 +228,7 @@ export function parseResponse(responseText) {
                 if (parsed.characters) {
                     result.characterThoughts = JSON.stringify(parsed.characters);
                 }
-                if (parsed.stats && typeof parsed.stats === 'object') {
-                    result.stats = JSON.stringify(parsed.stats);
-                }
-                if (parsed.memories && typeof parsed.memories === 'object') {
-                    result.memories = JSON.stringify(parsed.memories);
-                }
-                if (parsed.equipment && typeof parsed.equipment === 'object') {
-                    result.equipment = JSON.stringify(parsed.equipment);
-                }
-                if (parsed.conditions && typeof parsed.conditions === 'object') {
-                    result.conditions = JSON.stringify(parsed.conditions);
-                }
-                if (parsed.abilities && typeof parsed.abilities === 'object') {
-                    result.abilities = JSON.stringify(parsed.abilities);
-                }
-                if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
+                if (hasAnyResult(result)) {
                     debugLog('[RPG Parser] Returning unified JSON parse results');
                     return result;
                 }
@@ -217,26 +239,8 @@ export function parseResponse(responseText) {
             const jsonContent = extractedObjects[idx];
             const parsed = repairJSON(jsonContent);
             if (parsed) {
-                // Character Stats ride along in whichever object carries them.
-                // Stats and memories ride along in whichever object carries them.
-                if (parsed.stats && typeof parsed.stats === 'object' && !result.stats) {
-                    result.stats = JSON.stringify(parsed.stats);
-                }
-                if (parsed.memories && typeof parsed.memories === 'object' && !result.memories) {
-                    result.memories = JSON.stringify(parsed.memories);
-                }
-                if (!parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
-                if (parsed.equipment && typeof parsed.equipment === 'object' && !result.equipment) {
-                    result.equipment = JSON.stringify(parsed.equipment);
-                }
-                if (parsed.conditions && typeof parsed.conditions === 'object' && !result.conditions) {
-                    result.conditions = JSON.stringify(parsed.conditions);
-                }
-                if (!parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
-                if (parsed.abilities && typeof parsed.abilities === 'object' && !result.abilities) {
-                    result.abilities = JSON.stringify(parsed.abilities);
-                }
-                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells'].includes(k))) continue;
+                // The Better Stats keys ride along in whichever object carries them.
+                if (extractExtraKeys(parsed, result)) continue;
                 // Check if object is wrapped (e.g., {"quests": {...}})
                 // Unwrap single-key objects that match our tracker types
                 let unwrapped = parsed;
@@ -263,7 +267,7 @@ export function parseResponse(responseText) {
                 console.error('[RPG Parser] ✗ Failed to parse raw JSON object', idx + 1);
             }
         }
-        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
+        if (hasAnyResult(result)) {
             debugLog('[RPG Parser] Returning raw JSON parse results');
             return result;
         } else {
@@ -282,25 +286,8 @@ export function parseResponse(responseText) {
             if (!jsonContent) continue;
             const parsed = repairJSON(jsonContent);
             if (parsed) {
-                // Stats and memories ride along in whichever object carries them.
-                if (parsed.stats && typeof parsed.stats === 'object' && !result.stats) {
-                    result.stats = JSON.stringify(parsed.stats);
-                }
-                if (parsed.memories && typeof parsed.memories === 'object' && !result.memories) {
-                    result.memories = JSON.stringify(parsed.memories);
-                }
-                if (!parsed.equipment && parsed.inventory && typeof parsed.inventory === 'object') parsed.equipment = parsed.inventory;
-                if (parsed.equipment && typeof parsed.equipment === 'object' && !result.equipment) {
-                    result.equipment = JSON.stringify(parsed.equipment);
-                }
-                if (parsed.conditions && typeof parsed.conditions === 'object' && !result.conditions) {
-                    result.conditions = JSON.stringify(parsed.conditions);
-                }
-                if (!parsed.abilities && (parsed.skills || parsed.spells) && typeof (parsed.skills || parsed.spells) === 'object') parsed.abilities = parsed.skills || parsed.spells;
-                if (parsed.abilities && typeof parsed.abilities === 'object' && !result.abilities) {
-                    result.abilities = JSON.stringify(parsed.abilities);
-                }
-                if (Object.keys(parsed).every(k => ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells'].includes(k))) continue;
+                // The Better Stats keys ride along in whichever object carries them.
+                if (extractExtraKeys(parsed, result)) continue;
                 // Detect tracker type by checking for top-level fields
                 if (parsed.main !== undefined || parsed.optional !== undefined) {
                     result.quests = jsonContent;
@@ -321,7 +308,7 @@ export function parseResponse(responseText) {
         }
         // If we found at least one valid JSON block, return the result
         // Mixed formats (some JSON, some text) will still work
-        if (result.quests || result.infoBox || result.characterThoughts || result.stats || result.memories || result.equipment || result.conditions || result.abilities) {
+        if (hasAnyResult(result)) {
             debugLog('[RPG Parser] Returning JSON parse results');
             return result;
         } else {
@@ -437,7 +424,7 @@ export function parseResponse(responseText) {
     debugLog('[RPG Parser] Found Characters:', !!result.characterThoughts);
     debugLog('[RPG Parser] =======================================================');
     // Check if we found at least one section - if not, mark as parsing failure
-    if (!result.quests && !result.infoBox && !result.characterThoughts && !result.stats && !result.memories && !result.equipment && !result.conditions && !result.abilities) {
+    if (!hasAnyResult(result)) {
         result.parsingFailed = true;
         console.error('[RPG Parser] ❌ No tracker data found in response - parsing failed');
     }

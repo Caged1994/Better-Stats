@@ -16,6 +16,7 @@
  */
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
+import { isRpgModeActive } from './rpgMode.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_ABILITIES,
@@ -34,7 +35,7 @@ import { resolveTarget, resolveEffectsFor, describeEffects } from './characterEq
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export function isAbilitiesEnabled() {
-    return extensionSettings.enabled !== false && extensionSettings.characterAbilitiesEnabled !== false;
+    return isRpgModeActive() && extensionSettings.characterAbilitiesEnabled !== false;
 }
 
 export function setAbilitiesEnabled(on) {

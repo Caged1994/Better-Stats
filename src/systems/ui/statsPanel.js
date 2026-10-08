@@ -40,6 +40,13 @@ import { fadedIds } from '../../utils/memoryModel.js';
 import { getEffectiveStatValues } from '../features/characterModifiers.js';
 import { ITEM_EMOJI, DEFAULT_ICON, normalizeItem } from '../../utils/equipmentModel.js';
 import { CONDITION_EMOJI, DEFAULT_CONDITION_ICON } from '../../utils/conditionModel.js';
+import {
+    isProgressEnabled, isXpEnabled, getProgress, getLevelInfo, hasLevel, getXpSettings,
+    isPartyMember, setPartyMember, awardXpTo, removeLogEntry, setLevel, setUnspentPoints,
+    spendPoint, refundPoint,
+} from '../features/characterProgress.js';
+import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
+import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
 
 const PANEL_ID = 'dooms-stats-panel';
 const POPOUT_NAME = 'dooms-stats-popout';
@@ -63,6 +70,7 @@ const SECTIONS = [
     { id: 'equipment', label: 'Equipment', icon: 'fa-shield-halved' },
     { id: 'abilities', label: 'Abilities', icon: 'fa-wand-sparkles' },
     { id: 'memories', label: 'Memories', icon: 'fa-brain' },
+    { id: 'xp', label: 'Level', icon: 'fa-ranking-star' },
 ];
 const FORM_SECTION = { item: 'equipment', ability: 'abilities' };
 function getSection() {
@@ -75,6 +83,8 @@ function setSection(id) {
     try { saveSettings(); } catch (e) {}
 }
 function resetForm() { Object.assign(itemForm, FORM_DEFAULTS); }
+// The manual XP form (XP tab), kept across repaints.
+const xpForm = { amount: '', reason: '' };
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -195,7 +205,7 @@ function attrTier(value) {
     return { cls: '', label: value === HUMAN_AVERAGE ? 'average' : 'above average' };
 }
 
-function attrHtml(stat, base, value = base, mod = null) {
+function attrHtml(stat, base, value = base, mod = null, prog = null) {
     const tier = attrTier(value);
     const total = mod?.total || 0;
     const from = total ? (mod.parts || []).map(p => `${p.label} ${p.value > 0 ? '+' : '−'}${Math.abs(p.value)}`).join(', ') : '';
@@ -211,10 +221,44 @@ function attrHtml(stat, base, value = base, mod = null) {
             <div class="dsp-attr-line">
                 <button type="button" class="dsp-value dsp-attr-value" data-stat="${escapeHtml(stat.id)}" title="${total ? `Base ${base} — click to edit the base value` : 'Click to edit'}">${value}</button>
                 ${total ? `<span class="dsp-mod ${total > 0 ? 'is-up' : 'is-down'}" title="${escapeHtml(from)}">${total > 0 ? '+' : '−'}${Math.abs(total)}</span>` : ''}
+                ${pointButtons(stat, base, prog)}
             </div>
             <div class="dsp-attr-bar"><span style="width:${width.toFixed(1)}%"></span></div>
             ${stat.abbr ? `<span class="dsp-attr-name">${escapeHtml(stat.name)}</span>` : ''}
         </div>`;
+}
+
+/** The + (spend a level point) and ↶ (take it back) buttons of an attribute tile. */
+function pointButtons(stat, base, prog) {
+    if (!prog) return '';
+    const spent = prog.spent[stat.id] || 0;
+    const canAdd = prog.points > 0 && base < stat.max;
+    if (!canAdd && !spent) return '';
+    return `<div class="dsp-points">
+        ${spent ? `<button type="button" class="dsp-point-btn is-refund" data-point="refund" data-stat="${escapeHtml(stat.id)}" title="Take back a point (${spent} assigned from levels)">↶ ${spent}</button>` : ''}
+        ${canAdd ? `<button type="button" class="dsp-point-btn" data-point="spend" data-stat="${escapeHtml(stat.id)}" title="Spend a level point: ${escapeHtml(stat.name)} +1">+</button>` : ''}
+    </div>`;
+}
+
+/** Level badge + XP bar in the hero. */
+function heroLevelHtml() {
+    if (!isProgressEnabled() || !hasLevel(selected.name, selected.isUser)) return '';
+    const info = getLevelInfo(selected.name, selected.isUser);
+    const earns = selected.isUser || isPartyMember(selected.name);
+    const bar = earns && isXpEnabled()
+        ? `<span class="dsp-xpbar" title="${info.into} / ${info.needed} XP to level ${info.level + 1}"><span style="width:${info.pct}%"></span></span>`
+        : '';
+    return `<span class="dsp-hero-level"><span class="dsp-lv" title="Level ${info.level}">Lv ${info.level}</span>${bar}</span>`;
+}
+
+function rpgOffHtml(head) {
+    const from = { chat: 'this chat', card: 'this card', default: 'the default setting' }[rpgModeSource()];
+    return head + `<div class="dsp-empty dsp-rpg-off">
+        <i class="fa-solid fa-dice-d20"></i>
+        <p>RPG mode is off for ${from}: stats, levels, equipment and the rest are not used here.</p>
+        <button type="button" class="dsp-text-btn is-primary" data-action="rpg-on"><i class="fa-solid fa-power-off"></i> Turn RPG mode on</button>
+        <p class="dsp-section-hint">Settings → RPG &amp; Stats has the per-card and per-chat switches.</p>
+    </div>`;
 }
 
 function buildHtml({ popout }) {
@@ -226,15 +270,18 @@ function buildHtml({ popout }) {
             <span class="dsp-title"><i class="fa-solid fa-chart-simple"></i> Stats</span>
             ${campaign ? `<span class="dsp-campaign" title="Current values belong to the active campaign">${escapeHtml(campaign)}</span>` : ''}
             <span class="dsp-spacer"></span>
+            <button type="button" class="dsp-icon-btn${isRpgModeActive() ? ' is-on' : ''}" data-action="${isRpgModeActive() ? 'rpg-off' : 'rpg-on'}" title="RPG mode is ${isRpgModeActive() ? 'on — click to turn it off for this card' : 'off — click to turn it on'}"><i class="fa-solid fa-power-off"></i></button>
             ${popout
                 ? '<button type="button" class="dsp-icon-btn" data-action="dock" title="Back into SillyTavern"><i class="fa-solid fa-down-left-and-up-right-to-center"></i></button>'
                 : '<button type="button" class="dsp-icon-btn" data-action="popout" title="Open in a separate window"><i class="fa-solid fa-up-right-from-square"></i></button>'}
             ${popout ? '' : '<button type="button" class="dsp-icon-btn" data-action="close" title="Close"><i class="fa-solid fa-xmark"></i></button>'}
         </header>`;
 
+    if (!isRpgModeActive()) return rpgOffHtml(head);
     if (!selected) {
         return head + '<div class="dsp-empty">No characters in the scene yet.</div>';
     }
+    const levelsOn = isProgressEnabled();
 
     const tabsHtml = tabs.length > 1 ? `
         <nav class="dsp-tabs" role="tablist" aria-label="Characters">
@@ -244,6 +291,7 @@ function buildHtml({ popout }) {
                     data-name="${escapeHtml(t.name)}" data-user="${t.isUser ? '1' : '0'}" title="${escapeHtml(t.name)}">
                     ${avatarHtml(t.name, 'dsp-tab-avatar')}
                     <span class="dsp-tab-name">${escapeHtml(t.name)}</span>
+                    ${levelsOn && hasLevel(t.name, t.isUser) ? `<span class="dsp-tab-lv">${getProgress(t.name, t.isUser).level}</span>` : ''}
                     ${t.isUser ? '<span class="dsp-you">YOU</span>' : ''}
                 </button>`;
             }).join('')}
@@ -263,6 +311,8 @@ function buildHtml({ popout }) {
     if (isEquipmentEnabled()) sections.push({ id: 'equipment', count: getEquipment(selected.name, selected.isUser).length });
     if (isAbilitiesEnabled()) sections.push({ id: 'abilities', count: getAbilities(selected.name, selected.isUser).length });
     if (!selected.isUser && isMemoriesEnabled()) sections.push({ id: 'memories', count: getMemories(selected.name).length });
+    const prog = levelsOn ? getProgress(selected.name, selected.isUser) : null;
+    if (levelsOn) sections.push({ id: 'xp', dot: prog.points > 0 });
     let section = getSection();
     if (!sections.some(x => x.id === section)) section = sections[0]?.id || 'stats';
     // Modifiers in effect, shown as a hint on the Attributes tab.
@@ -273,7 +323,9 @@ function buildHtml({ popout }) {
             ${sections.map(sec => {
                 const def = SECTIONS.find(x => x.id === sec.id);
                 const on = sec.id === section;
-                const badge = sec.id === 'attributes' && boosted ? '<span class="dsp-sec-dot" title="Bonuses in effect"></span>'
+                const badge = sec.dot ? '<span class="dsp-sec-dot is-up" title="Points to assign"></span>'
+                    : sec.id === 'attributes' && prog?.points ? '<span class="dsp-sec-dot is-up" title="Points to assign"></span>'
+                    : sec.id === 'attributes' && boosted ? '<span class="dsp-sec-dot" title="Bonuses in effect"></span>'
                     : (sec.count ? `<span class="dsp-sec-count">${sec.count}</span>` : '');
                 return `<button type="button" role="tab" class="dsp-sec${on ? ' is-active' : ''}" aria-selected="${on}" data-section="${sec.id}" title="${def.label}">
                     <i class="fa-solid ${def.icon}"></i><span class="dsp-sec-label">${def.label}</span>${badge}</button>`;
@@ -288,7 +340,8 @@ function buildHtml({ popout }) {
     } else if (section === 'attributes') {
         content = `<section class="dsp-section">
             <p class="dsp-section-hint">${HUMAN_AVERAGE} average · ${HUMAN_PEAK} human peak · bonuses from equipped items, conditions and passive abilities are shown as +N</p>
-            <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id], eff.values[s.id], eff.modifiers[s.id])).join('')}</div>
+            ${prog && prog.points ? `<div class="dsp-levelup"><i class="fa-solid fa-arrow-up"></i><span>Level up! <b>${prog.points}</b> point${prog.points === 1 ? '' : 's'} to assign — press + on an attribute.</span></div>` : ''}
+            <div class="dsp-attrs">${attrs.map(s => attrHtml(s, cur[s.id], eff.values[s.id], eff.modifiers[s.id], prog)).join('')}</div>
         </section>`;
     } else if (section === 'equipment') {
         content = equipmentHtml();
@@ -296,8 +349,10 @@ function buildHtml({ popout }) {
         content = abilitiesHtml();
     } else if (section === 'memories') {
         content = memoriesHtml();
+    } else if (section === 'xp') {
+        content = xpHtml(prog);
     }
-    if (!sections.length) content = '<div class="dsp-empty">Everything is switched off in Settings → Stats &amp; Memories.</div>';
+    if (!sections.length) content = '<div class="dsp-empty">Everything is switched off in Settings → RPG &amp; Stats.</div>';
 
     return `
         ${head}
@@ -306,7 +361,7 @@ function buildHtml({ popout }) {
             <section class="dsp-hero">
                 ${avatarHtml(selected.name, 'dsp-hero-avatar')}
                 <div class="dsp-hero-text">
-                    <span class="dsp-hero-name">${escapeHtml(selected.name)}</span>
+                    <span class="dsp-hero-name">${escapeHtml(selected.name)}${heroLevelHtml()}</span>
                     <span class="dsp-hero-sub">${selected.isUser ? 'Your character' : 'Character'}${campaign ? ` · ${escapeHtml(campaign)}` : ''}</span>
                 </div>
                 <button type="button" class="dsp-text-btn" data-action="reset" title="Put every stat back to the starting values set in the Workshop">
@@ -316,11 +371,109 @@ function buildHtml({ popout }) {
             ${isStatGenerationPending(selected.name, selected.isUser) ? `
             <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
+            ${prog && prog.points && section !== 'attributes' ? `<button type="button" class="dsp-levelup is-link" data-section-go="attributes"><i class="fa-solid fa-arrow-up"></i><span>Level up! <b>${prog.points}</b> point${prog.points === 1 ? '' : 's'} to assign</span></button>` : ''}
             ${isConditionsEnabled() ? conditionsHtml() : ''}
             ${sectionBar}
             <div class="dsp-section-body" data-section="${section}">${content}</div>
             <p class="dsp-foot">Click a value or a name to change it. <i class="fa-solid fa-robot"></i> the AI updates it &middot; <i class="fa-solid fa-lock"></i> only you do.</p>
         </div>`;
+}
+
+// ─── Level & XP ─────────────────────────────────────────────────────────────
+
+function xpHtml(prog) {
+    const who = selected;
+    const info = getLevelInfo(who.name, who.isUser);
+    const xpOn = isXpEnabled();
+    const party = who.isUser || prog.party;
+    const { perLevel } = getXpSettings();
+    const log = [...prog.log].reverse();
+    const srcIcon = { ai: 'fa-robot', quest: 'fa-scroll', user: 'fa-user-pen' };
+    const partyRow = who.isUser
+        ? '<p class="dsp-section-hint">Your character always earns the party\'s XP.</p>'
+        : `<label class="dsp-check dsp-party"><input type="checkbox" class="dsp-party-toggle"${prog.party ? ' checked' : ''}> In the party — earns the same XP as you</label>`;
+    return `
+        <section class="dsp-section dsp-xp">
+            <div class="dsp-xp-top">
+                <div class="dsp-xp-level">
+                    <span class="dsp-xp-label">Level</span>
+                    <button type="button" class="dsp-value dsp-xp-big" data-edit="level" title="Click to set the level (XP moves to the start of it)">${info.level}</button>
+                </div>
+                <div class="dsp-xp-progress">
+                    ${party && xpOn ? `
+                    <div class="dsp-xpbar is-big"><span style="width:${info.pct}%"></span></div>
+                    <div class="dsp-xp-nums"><span>${info.into} / ${info.needed} XP</span><span>${info.level >= MAX_LEVEL ? 'max level' : `to level ${info.level + 1}`}</span></div>
+                    <div class="dsp-xp-nums is-dim"><span>${info.xp} XP in total</span><span>${perLevel} × level per level</span></div>`
+                    : `<div class="dsp-xp-nums is-dim"><span>${xpOn ? 'Not in the party: earns no XP.' : 'Experience is off in Settings.'}</span></div>`}
+                </div>
+                <div class="dsp-xp-level">
+                    <span class="dsp-xp-label">Points</span>
+                    <button type="button" class="dsp-value dsp-xp-big${prog.points ? ' is-up' : ''}" data-edit="points" title="Attribute points still to assign (click to change)">${prog.points}</button>
+                </div>
+            </div>
+            ${partyRow}
+            ${xpOn && party ? `
+            <div class="dsp-xp-add">
+                <input type="number" class="dsp-xp-in-amount" data-xp-field="amount" value="${escapeHtml(xpForm.amount)}" placeholder="XP" step="1" aria-label="XP to add (negative to take away)">
+                <input type="text" class="dsp-xp-in-reason" data-xp-field="reason" value="${escapeHtml(xpForm.reason)}" placeholder="Reason (optional)" maxlength="120" aria-label="Reason">
+                <button type="button" class="dsp-text-btn" data-action="xp-add" title="Give ${escapeHtml(who.name)} this XP (just them)"><i class="fa-solid fa-plus"></i> Add</button>
+            </div>` : ''}
+            <div class="dsp-subhead"><i class="fa-solid fa-scroll"></i> Experience log <span>${log.length || ''}</span></div>
+            ${log.length ? `<div class="dsp-xplog">${log.map(e => `
+                <div class="dsp-xplog-row${e.amount < 0 ? ' is-neg' : ''}" data-id="${escapeHtml(e.id)}">
+                    <i class="fa-solid ${srcIcon[e.source] || 'fa-star'} dsp-xplog-src" title="${e.source === 'ai' ? 'From the story' : e.source === 'quest' ? 'Quest completed' : 'Added by you'}"></i>
+                    <span class="dsp-xplog-amt">${escapeHtml(formatXpAmount(e.amount))}</span>
+                    <span class="dsp-xplog-reason">${escapeHtml(e.reason || '—')}${e.level ? ` <span class="dsp-xplog-lv">→ Lv ${e.level}</span>` : ''}</span>
+                    <button type="button" class="dsp-item-remove dsp-xplog-del" title="Delete this entry and take its XP back (the level stays)"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('')}</div>`
+            : '<div class="dsp-items-empty is-small">Nothing earned yet. The AI awards XP for real accomplishments; completing a quest in the Quests panel does too.</div>'}
+        </section>`;
+}
+
+/** Inline number edit for the level and the unspent points. */
+function startProgressEdit(button) {
+    if (!selected) return;
+    const field = button.getAttribute('data-edit');
+    const prog = getProgress(selected.name, selected.isUser);
+    const doc = button.ownerDocument;
+    const input = doc.createElement('input');
+    input.type = 'number';
+    input.min = field === 'level' ? '1' : '0';
+    input.max = field === 'level' ? String(MAX_LEVEL) : '999';
+    input.step = '1';
+    input.value = String(field === 'level' ? prog.level : prog.points);
+    input.className = 'dsp-value-input dsp-xp-big';
+    button.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const who = { ...selected };
+    const finish = (commit) => {
+        if (done) return;
+        done = true;
+        const n = Math.round(Number(input.value));
+        if (commit && Number.isFinite(n)) {
+            if (field === 'level' && n !== prog.level) setLevel(who.name, who.isUser, n);
+            else if (field === 'points' && n !== prog.points) setUnspentPoints(who.name, who.isUser, n);
+        }
+        input.blur();
+        renderAll();
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+}
+
+function submitXpForm() {
+    if (!selected) return;
+    const n = Math.round(Number(xpForm.amount));
+    if (!Number.isFinite(n) || !n) return;
+    awardXpTo(selected.name, selected.isUser, n, { reason: xpForm.reason || 'Added by hand', source: 'user' });
+    xpForm.amount = '';
+    xpForm.reason = '';
+    renderAll();
 }
 
 // ─── Memories (NPCs) ────────────────────────────────────────────────────────
@@ -838,6 +991,22 @@ function bindRootListeners(root) {
             return;
         }
         if (cond && selected && e.target.closest('.dsp-edit-open')) { openEdit('condition', cond.getAttribute('data-id')); return; }
+        const pointBtn = e.target.closest('.dsp-point-btn');
+        if (pointBtn && selected) {
+            const id = pointBtn.getAttribute('data-stat');
+            if (pointBtn.getAttribute('data-point') === 'spend') spendPoint(selected.name, selected.isUser, id);
+            else refundPoint(selected.name, selected.isUser, id);
+            return;
+        }
+        const go = e.target.closest('[data-section-go]');
+        if (go) { setSection(go.getAttribute('data-section-go')); resetForm(); renderAll(); return; }
+        const logRow = e.target.closest('.dsp-xplog-row');
+        if (logRow && selected && e.target.closest('.dsp-xplog-del')) {
+            removeLogEntry(selected.name, selected.isUser, logRow.getAttribute('data-id'));
+            return;
+        }
+        const progEdit = e.target.closest('button.dsp-value[data-edit]');
+        if (progEdit) { startProgressEdit(progEdit); return; }
         const value = e.target.closest('button.dsp-value');
         if (value) { startEdit(value); return; }
         const action = e.target.closest('[data-action]')?.getAttribute('data-action');
@@ -852,6 +1021,13 @@ function bindRootListeners(root) {
         }
         if (action === 'item-cancel') { resetForm(); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
+        if (action === 'xp-add') { submitXpForm(); return; }
+        if (action === 'rpg-on') { toggleRpgModeHere(true); return; }
+        if (action === 'rpg-off') {
+            const ok = (root.ownerDocument.defaultView || window).confirm('Turn RPG mode off for this card?\n\nStats, levels, equipment and the rest stop being sent to the AI and updated in its chats. Nothing is deleted; turn it back on any time.');
+            if (ok) toggleRpgModeHere(false);
+            return;
+        }
         if (action === 'gear-request' && selected) { requestStartingGear(selected.name, selected.isUser); return; }
         if (action === 'abl-request' && selected) { requestStartingAbilities(selected.name, selected.isUser); return; }
         if (action === 'abl-cancel' && selected) { cancelStartingAbilities(selected.name, selected.isUser); return; }
@@ -873,6 +1049,8 @@ function bindRootListeners(root) {
     });
     // Add-item form fields live in itemForm so a repaint keeps them.
     root.addEventListener('input', (e) => {
+        const xpField = e.target.getAttribute && e.target.getAttribute('data-xp-field');
+        if (xpField) { xpForm[xpField] = e.target.value; return; }
         const field = e.target.getAttribute && e.target.getAttribute('data-field');
         if (field) { itemForm[field] = e.target.value; itemForm.error = ''; }
     });
@@ -880,8 +1058,14 @@ function bindRootListeners(root) {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; }
+        if (e.target.classList && e.target.classList.contains('dsp-party-toggle') && selected && !selected.isUser) setPartyMember(selected.name, e.target.checked);
     });
     root.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.closest && e.target.closest('.dsp-xp-add')) {
+            e.preventDefault();
+            submitXpForm();
+            return;
+        }
         if (e.key === 'Enter' && e.target.closest && e.target.closest('.dsp-item-form') && e.target.matches('input[type=text], input[type=number]')) {
             e.preventDefault();
             submitItemForm();

@@ -8336,3 +8336,33 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 }
 
 #character-workshop-popup .cw-mem-error { flex: 1; font-size: 0.78rem; color: #ff8a8a; }
+
+/* ── RPG & Stats settings: XP table ─────────────────────────────────────── */
+.rpg-setting-row.rpg-setting-row-wrap {
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.rpg-xp-tiers,
+.rpg-xp-quest-sizes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.rpg-setting-row .rpg-xp-tier,
+.rpg-setting-row .rpg-xp-quest-sizes label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: normal;
+    opacity: 0.85;
+}
+.rpg-setting-row .rpg-xp-tier input {
+    width: 4.5em;
+}
+.rpg-quest-actions .rpg-quest-drop {
+    opacity: 0.6;
+}

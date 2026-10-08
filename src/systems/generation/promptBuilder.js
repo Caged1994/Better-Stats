@@ -19,6 +19,7 @@ import { buildMemoriesPromptForGeneration, buildMemoriesContextSummary, isMemori
 import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary, isEquipmentEnabled } from '../features/characterEquipment.js';
 import { buildConditionsPromptForGeneration, buildConditionsContextSummary, isConditionsEnabled } from '../features/characterConditions.js';
 import { buildAbilitiesPromptForGeneration, buildAbilitiesContextSummary, isAbilitiesEnabled } from '../features/characterAbilities.js';
+import { buildProgressPromptForGeneration, buildProgressContextSummary } from '../features/characterProgress.js';
 // Registers the attribute-modifier provider the stats prompt uses.
 import '../features/characterModifiers.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
@@ -335,6 +336,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // Spells & Abilities.
         const abilitiesSection = buildAbilitiesPromptForGeneration({ compact });
         if (abilitiesSection) instructions += '\n\n' + abilitiesSection;
+        // Experience and levels.
+        const progressSection = buildProgressPromptForGeneration({ compact });
+        if (progressSection) instructions += '\n\n' + progressSection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -355,8 +359,9 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         const equipmentSection = buildEquipmentPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection });
         const conditionsSection = buildConditionsPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection });
         const abilitiesSection = buildAbilitiesPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection && !conditionsSection });
-        if (statsSection || memoriesSection || equipmentSection || conditionsSection || abilitiesSection) {
-            instructions += '\n' + [statsSection, memoriesSection, equipmentSection, conditionsSection, abilitiesSection].filter(Boolean).join('\n\n');
+        const progressSection = buildProgressPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection && !conditionsSection && !abilitiesSection });
+        if (statsSection || memoriesSection || equipmentSection || conditionsSection || abilitiesSection || progressSection) {
+            instructions += '\n' + [statsSection, memoriesSection, equipmentSection, conditionsSection, abilitiesSection, progressSection].filter(Boolean).join('\n\n');
             if (includeContinuation) {
                 instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
             }
@@ -815,6 +820,8 @@ export function generateContextualSummary() {
         if (conditions) summary += conditions + '\n';
         const abilities = buildAbilitiesContextSummary();
         if (abilities) summary += abilities + '\n';
+        const levels = buildProgressContextSummary();
+        if (levels) summary += levels + '\n';
     } catch (e) {
         console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }

@@ -21,6 +21,7 @@
 import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings } from '../../core/state.js';
+import { isRpgModeActive } from './rpgMode.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     MAX_ITEMS,
@@ -46,7 +47,7 @@ import {
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export function isEquipmentEnabled() {
-    return extensionSettings.enabled !== false && extensionSettings.characterEquipmentEnabled !== false;
+    return isRpgModeActive() && extensionSettings.characterEquipmentEnabled !== false;
 }
 
 export function setEquipmentEnabled(on) {

@@ -25,6 +25,7 @@
 import { getContext } from '../../../../../../extensions.js';
 import { chat, chat_metadata } from '../../../../../../../script.js';
 import { extensionSettings, committedTrackerData, lastGeneratedData } from '../../core/state.js';
+import { isRpgModeActive } from './rpgMode.js';
 import { saveSettings, saveChatData } from '../../core/persistence.js';
 import {
     resolveSheet,
@@ -495,7 +496,7 @@ export function getStatCharacters({ source = 'committed' } = {}) {
 
 /** Master switch (Settings may expose it later; on unless explicitly off). */
 export function isCharacterStatsEnabled() {
-    return extensionSettings.enabled !== false && extensionSettings.characterStatsEnabled !== false;
+    return isRpgModeActive() && extensionSettings.characterStatsEnabled !== false;
 }
 
 /**
