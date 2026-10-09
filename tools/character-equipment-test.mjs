@@ -120,13 +120,13 @@ check('persona and NPC lists are separate', Eq.getEquipment('Mastera', false).le
 
 // ── 3. Prompt ──
 const instr = pb.generateTrackerInstructions(false, false);
-check('current equipment is sent, locked items marked', instr.includes('- Mastera (player character): backpack: 🔒🗡️ Father\'s sword, 🔦 Torch'));
+check('current equipment is sent, locked items marked', instr.includes('- Mastera (player character): backpack: 🔒Father\'s sword, Torch'));
 check('NPCs with nothing are listed too', instr.includes('- Elena: nothing listed yet'));
-check('the AI is told how to change equipment', instr.includes('"equipment"') && instr.includes('can never be removed'));
+check('the AI is told how to change equipment', instr.includes('"equipment"') && instr.includes('Never remove 🔒'));
 check('a character with an empty list is asked for starting gear', /STARTING GEAR: add what Elena already carries/.test(instr));
 check('...but not one that already has items', !/STARTING GEAR: add what [^\n]*Mastera/.test(instr));
-check('items the player takes out are to be added', instr.includes("anything Mastera takes out or uses in the user's message"));
-check('items shown being used are to be added', instr.includes('is shown already having, wearing or using one that is not listed'));
+check('items the player takes out are to be added', instr.includes("anything Mastera takes out in the user's message"));
+check('items shown being used are to be added', instr.includes('is shown having one not listed'));
 check('separate-mode context lists equipment', pb.generateContextualSummary().includes('Mastera — backpack:'));
 Eq.setEquipmentEnabled(false);
 check('switched off: nothing is sent', !pb.generateTrackerInstructions(false, false).includes('EQUIPMENT'));

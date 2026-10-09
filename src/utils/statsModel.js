@@ -422,7 +422,10 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
         }
         const mods = e.modifiers || {};
         const bonus = [];
+        const plainAttrs = []; // attribute values with no bonus, for the compact "all 10" form
         for (const s of e.stats) {
+            // Compact prompts name built-in attributes by abbreviation (STR, DEX…).
+            const label = compact && s.builtin !== false && s.abbr ? s.abbr : s.name;
             const v = e.current?.[s.id] ?? s.base;
             if (s.kind === 'attribute') hasAttributes = true;
             const m = s.kind === 'attribute' ? (mods[s.id]?.total || 0) : 0;
@@ -435,10 +438,15 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
                 addDescription(e, s);
             } else if (m) {
                 const eff = clampStatValue(s, v + m);
-                fixed.push(`${s.name} ${eff} (${v} ${m > 0 ? '+' : '−'} ${Math.abs(m)})`);
+                fixed.push(`${label} ${eff} (${v} ${m > 0 ? '+' : '−'} ${Math.abs(m)})`);
             } else {
-                fixed.push(`${s.name} ${v}${s.kind === 'state' ? '%' : ''}`);
+                fixed.push(`${label} ${v}${s.kind === 'state' ? '%' : ''}`);
+                if (s.kind === 'attribute') plainAttrs.push(v);
             }
+        }
+        // Every fixed stat is an attribute with the same value: say it once.
+        if (compact && plainAttrs.length >= 4 && plainAttrs.length === fixed.length && plainAttrs.every(v => v === plainAttrs[0])) {
+            fixed.splice(0, fixed.length, `all attributes ${plainAttrs[0]}`);
         }
         if (Object.keys(values).length) payload[e.displayName] = values;
         if (fixed.length) fixedLines.push(`- ${e.displayName}${e.isUser ? ' (player character)' : ''}: ${fixed.join(', ')}`);
@@ -447,8 +455,10 @@ export function buildStatsPrompt(entries, { compact = true, standalone = false }
 
     let out = '';
     if (Object.keys(payload).length) {
-        const json = JSON.stringify({ stats: payload }, null, 2);
-        const body = json.slice(json.indexOf('"stats"'), json.lastIndexOf('}')).trimEnd();
+        // One line per character: a lot fewer tokens than indented JSON.
+        const body = '"stats": {\n' + Object.entries(payload)
+            .map(([name, vals]) => `    ${JSON.stringify(name)}: ${JSON.stringify(vals).replace(/,"/g, ', "').replace(/":/g, '": ')}`)
+            .join(',\n') + '\n  }';
         if (standalone) {
             out += compact
                 ? 'Start every reply with ONE JSON code block holding the character stats below, updated:\n'

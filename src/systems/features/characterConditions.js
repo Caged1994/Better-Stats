@@ -159,7 +159,7 @@ export function buildConditionsContextSummary() {
     const lines = getStatCharacters()
         .map(({ name, isUser }) => ({ name, isUser, list: getConditions(name, isUser) }))
         .filter(e => e.list.length)
-        .map(e => `${e.name}: ${formatConditions(e.list, (eff) => describeEffects(e.name, e.isUser, eff))}`);
+        .map(e => `${e.name}: ${formatConditions(e.list, (eff) => describeEffects(e.name, e.isUser, eff), { icons: false })}`);
     return lines.length ? 'Conditions:\n' + lines.join('\n') : '';
 }
 

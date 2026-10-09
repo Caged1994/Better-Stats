@@ -101,8 +101,8 @@ backToChat();
 
 // ── 3. Prompt ──
 const instr = pb.generateTrackerInstructions(false, false);
-check('known abilities are sent, locked marked, effects shown', instr.includes('- Mastera (player character): abilities: 🔒🛡️ Iron skin (CON +2)'));
-check('the AI is told how to change abilities', instr.includes('"abilities"') && instr.includes('"type": "spell" or "ability"'));
+check('known abilities are sent, locked marked, effects shown', instr.includes('- Mastera (player character): abilities: 🔒Iron skin (CON +2)'));
+check('the AI is told how to change abilities', instr.includes('"abilities"') && instr.includes('"type" spell or ability'));
 check('an empty list asks for starting abilities', /STARTING ABILITIES: add the spells and abilities Elena already knows/.test(instr));
 check('the example shows the abilities key', pb.generateTrackerExample().includes('"abilities": {}'));
 check('separate-mode context lists them', pb.generateContextualSummary().includes('Spells & abilities:'));

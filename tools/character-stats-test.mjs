@@ -121,7 +121,7 @@ S.setCurrentStatValue('Mastera', true, 'str', 70);
 // ── 4. Prompt carries the stats ──
 const instr = pb.generateTrackerInstructions(false, false);
 check('tracker instructions ask for "stats"', instr.includes('"stats"') && instr.includes('"Elena"') && instr.includes('"Mastera"'));
-check('fixed stats are read-only context', /Fixed stats/.test(instr) && /Strength 70/.test(instr));
+check('fixed stats are read-only context', /Fixed stats/.test(instr) && /STR 70/.test(instr));
 check('custom stat is explained to the AI', instr.includes('- Sanity, 0-100%: Grip on reality'));
 check('the attribute scale is explained', instr.includes('10 = ordinary person') && instr.includes('20 = human peak'));
 check('a new NPC is asked to be generated', /NEW: Elena has no stats yet/.test(instr) && /"Strength": "X"/.test(instr));

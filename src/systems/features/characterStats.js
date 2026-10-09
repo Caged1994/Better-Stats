@@ -510,7 +510,10 @@ export function buildStatsContextSummary() {
             const eff = m ? clampStatValue(s, cur[s.id] + m) : cur[s.id];
             return `${s.abbr || s.name} ${eff}${m ? ` (${m > 0 ? '+' : ''}${m})` : ''}`;
         });
-        return `${name}${isUser ? ' (player character)' : ''}: ${[...states, ...attrs].join(', ')}`;
+        // Six plain attributes with the same value: say it once.
+        const plain = attrs.length >= 4 && attrs.every(t => /^\S+ \d+$/.test(t)) && new Set(attrs.map(t => t.split(' ')[1])).size === 1;
+        const attrPart = plain ? [`all attributes ${attrs[0].split(' ')[1]}`] : attrs;
+        return `${name}${isUser ? ' (player character)' : ''}: ${[...states, ...attrPart].join(', ')}`;
     });
     const kept = lines.filter(l => !l.endsWith(': '));
     return kept.length ? 'Character stats:\n' + kept.join('\n') : '';

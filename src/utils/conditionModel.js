@@ -135,10 +135,10 @@ export function conditionModifierSources(list) {
 }
 
 /** "🤢 Poisoned (CON −2), 🍺 Tipsy" */
-export function formatConditions(list, formatEffect = null) {
+export function formatConditions(list, formatEffect = null, { icons = true } = {}) {
     return (list || []).map(c => {
         const eff = formatEffect && c.effects && Object.keys(c.effects).length ? formatEffect(c.effects) : '';
-        return `${c.icon || DEFAULT_CONDITION_ICON} ${c.name}${eff ? ` (${eff})` : ''}`;
+        return `${icons ? `${c.icon || DEFAULT_CONDITION_ICON} ` : ''}${c.name}${eff ? ` (${eff})` : ''}`;
     }).join(', ');
 }
 
@@ -158,10 +158,10 @@ export function buildConditionsPrompt(entries, { compact = true, standalone = fa
     let out = '';
     if (withAny.length) {
         out += compact ? 'CONDITIONS (temporary, in effect now):\n' : 'CONDITIONS — temporary states in effect right now; let them shape the scene:\n';
-        out += withAny.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${formatConditions(e.conditions, e.formatEffect)}`).join('\n') + '\n';
+        out += withAny.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${formatConditions(e.conditions, e.formatEffect, { icons: !compact })}`).join('\n') + '\n';
     }
     out += compact
-        ? `When a temporary condition starts (poisoned, wounded, exhausted, drunk, scared, blessed…) or ends, ${where}: ${example} — one emoji, a short name, a desc under 8 words, "effects" only for real attribute bonuses/maluses (applied automatically while it lasts; never change attributes yourself for it). Remove it when it ends. Omit the key when nothing changes.`
+        ? `When a temporary condition (poisoned, wounded, drunk, blessed…) starts or ends, ${where}: ${example} — one emoji, short name, desc under 8 words, "effects" only for real attribute changes (applied while it lasts). Omit the key when nothing changes.`
         : `CONDITION CHANGES: when a temporary condition starts for one of the characters in the scene — poisoned, wounded, sick, exhausted, drunk, frightened, enraged, blessed, cursed and so on — or when one ends, ${where}, like ${example}. Each condition has one emoji, a short name, a description under 8 words and, only when it genuinely affects an attribute, "effects" (e.g. {"DEX": -3}); DES applies them automatically while the condition lasts, so never raise or lower attributes yourself because of it. Remove a condition as soon as it ends (healed, sobered up, rested). Leave the key out entirely when nothing changes.`;
     return out.trim();
 }

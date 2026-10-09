@@ -134,7 +134,7 @@ check('without points nothing is spent', P.spendPoint('Mastera', true, 'dex') ==
 // ── 4. Prompt: XP rules and NPC levels ──
 let instr = pb.generateTrackerInstructions(false, false);
 check('the XP rules are sent', instr.includes('EXPERIENCE') && instr.includes('"xp": {"size": "medium"'));
-check('sizes carry the user\'s amounts', instr.includes('small (10)') && instr.includes('epic (100)'));
+check('sizes carry the user\'s amounts', instr.includes('small (10)') && instr.includes('epic (100,'));
 check('the party is named with levels', instr.includes('Mastera (player character) Lv 4') && instr.includes('Elena Lv 2'));
 check('a new NPC is asked for a level', /LEVELS — .*"Bram": 3/.test(instr), instr.slice(instr.indexOf('LEVELS'), instr.indexOf('LEVELS') + 200));
 check('party members are not asked for a level', !/"levels": \{[^}]*Elena/.test(instr));

@@ -153,10 +153,10 @@ export function abilityModifierSources(list) {
 }
 
 /** "spells: 🔥 Fireball; abilities: 🔒🛡️ Iron skin (CON +2)" */
-export function formatAbilities(list, formatEffect = null) {
+export function formatAbilities(list, formatEffect = null, { icons = true } = {}) {
     const fmt = (arr) => arr.map(a => {
         const eff = formatEffect && a.effects && Object.keys(a.effects).length ? formatEffect(a.effects) : '';
-        return `${a.aiCanRemove === false ? LOCK_MARK : ''}${a.icon} ${a.name}${eff ? ` (${eff})` : ''}`;
+        return `${a.aiCanRemove === false ? LOCK_MARK : ''}${icons ? `${a.icon} ` : ''}${a.name}${eff ? ` (${eff})` : ''}`;
     }).join(', ');
     const spells = (list || []).filter(a => a.type === 'spell');
     const skills = (list || []).filter(a => a.type !== 'spell');
@@ -173,13 +173,15 @@ export function formatAbilities(list, formatEffect = null) {
 export function buildAbilitiesPrompt(entries, { compact = true, standalone = false } = {}) {
     const list = (entries || []).filter(e => e && e.name);
     if (!list.length) return '';
-    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.abilities.length ? formatAbilities(e.abilities, e.formatEffect) : 'nothing listed yet'}`);
+    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.abilities.length ? formatAbilities(e.abilities, e.formatEffect, { icons: !compact }) : 'nothing listed yet'}`);
     const seed = list.filter(e => e.needsSeed).map(e => e.name);
     const player = list.find(e => e.isUser)?.name;
-    const example = JSON.stringify({ abilities: { [list[0].name]: {
-        add: [{ icon: '🔥', name: 'Fireball', desc: 'Hurls a burst of flame', type: 'spell' }, { icon: '🛡️', name: 'Iron skin', desc: 'Shrugs off blows', type: 'ability', effects: { CON: 1 } }],
-        remove: ['Forgotten trick'],
-    } } });
+    const example = JSON.stringify({ abilities: { [list[0].name]: compact
+        ? { add: [{ icon: '🔥', name: 'Fireball', desc: 'Burst of flame', type: 'spell' }], remove: ['Old trick'] }
+        : {
+            add: [{ icon: '🔥', name: 'Fireball', desc: 'Hurls a burst of flame', type: 'spell' }, { icon: '🛡️', name: 'Iron skin', desc: 'Shrugs off blows', type: 'ability', effects: { CON: 1 } }],
+            remove: ['Forgotten trick'],
+        } } });
     const where = standalone ? 'start your reply with ONE JSON code block' : 'add an "abilities" key to the same tracker JSON object';
     let out = compact
         ? 'SPELLS & ABILITIES (what each knows how to do):\n'
@@ -189,7 +191,7 @@ export function buildAbilitiesPrompt(entries, { compact = true, standalone = fal
         ? (compact ? `, including any ${player} uses in the user's message` : `. This includes any spell or ability ${player} uses in the user's message, even if it was never mentioned before`)
         : '';
     out += compact
-        ? `When someone learns a spell or ability, or is shown using one that is not listed${playerNote}, or truly loses one, ${where}: ${example} — one emoji, a short name, a desc under 8 words, "type": "spell" or "ability"; "effects" only for passive attribute bonuses (always applied; never change attributes yourself for them). ${LOCK_MARK} entries can never be removed. Omit the key when nothing changes.`
+        ? `When someone learns, truly loses, or is shown using a spell or ability not listed${playerNote}, ${where}: ${example} — one emoji, short name, desc under 8 words, "type" spell or ability; "effects" (e.g. {"CON": 1}) only for passive attribute bonuses. Never remove ${LOCK_MARK}. Omit the key when nothing changes.`
         : `ABILITY CHANGES: when a character learns a spell or ability, or the story shows them using one that is not listed yet${playerNote}, or when they truly lose one (forgotten, sealed, taken away), ${where}, like ${example}. Each entry has one emoji, a short name, a description under 8 words and "type": "spell" for magic or "ability" for skills, techniques and talents. Add "effects" only for passive abilities that genuinely raise or lower an attribute (e.g. {"CON": 1}); DES applies them automatically, so never change attributes yourself because of them. Entries marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
     if (seed.length) {
         out += compact

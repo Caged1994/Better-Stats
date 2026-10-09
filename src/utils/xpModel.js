@@ -263,10 +263,11 @@ export function buildXpPrompt({ party = [], known = [], needLevels = [], tiers =
         let s = compact
             ? `EXPERIENCE — the party (${who}) shares XP.\n`
             : `EXPERIENCE — the party (${who}) earns experience together; every member gets the same XP.\n`;
-        s += `When THIS reply contains a real accomplishment by the party (a fight won, a problem solved, a quest completed, an important discovery, a hard social victory), ${where} ONE award: "xp": {"size": "medium", "reason": "Drove off the bandits"}.\n`;
-        s += `Sizes: small (${t.small}) minor success · medium (${t.medium}) notable deed · large (${t.large}) major victory or side quest completed · epic (${t.epic}) main quest completed or legendary feat.\n`;
         s += compact
-            ? 'Most replies earn nothing: then leave "xp" out. No XP for talking, travelling or ordinary actions.'
+            ? `Only for a real accomplishment in THIS reply (fight won, problem solved, quest completed, key discovery), ${where} ONE award: "xp": {"size": "medium", "reason": "Drove off the bandits"}. Sizes: small (${t.small}), medium (${t.medium}), large (${t.large}, major victory / side quest), epic (${t.epic}, main quest / legendary feat).\n`
+            : `When THIS reply contains a real accomplishment by the party (a fight won, a problem solved, a quest completed, an important discovery, a hard social victory), ${where} ONE award: "xp": {"size": "medium", "reason": "Drove off the bandits"}.\nSizes: small (${t.small}) minor success · medium (${t.medium}) notable deed · large (${t.large}) major victory or side quest completed · epic (${t.epic}) main quest completed or legendary feat.\n`;
+        s += compact
+            ? 'Most replies earn nothing: leave "xp" out.'
             : 'Most replies earn nothing — leave "xp" out then. Never award XP for ordinary actions, conversation or travel, and never more than one award per reply.';
         parts.push(s);
     }

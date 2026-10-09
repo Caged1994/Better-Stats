@@ -106,10 +106,10 @@ Eq.setEquipmentEnabled(true);
 
 // ── 3. Prompt ──
 let instr = pb.generateTrackerInstructions(false, false);
-check('fixed attributes are sent with their effective value', instr.includes('Strength 12 (10 + 2)'));
+check('fixed attributes are sent with their effective value', instr.includes('STR 12 (10 + 2)'));
 check('bonuses are listed with their sources', instr.includes('STR +2 (Iron sword)') && instr.includes('DEX −2 (Ring, Wounded leg)'));
 check('the AI is told not to fold bonuses into attributes', /never add them to the values yourself/.test(instr));
-check('conditions are sent', instr.includes('- Mastera (player character): 🦴 Wounded leg (DEX −3)'));
+check('conditions are sent', instr.includes('- Mastera (player character): Wounded leg (DEX −3)'));
 check('the AI is told how to change conditions', instr.includes('"conditions"'));
 check('separate-mode context lists conditions and effective attributes', pb.generateContextualSummary().includes('Conditions:') && pb.generateContextualSummary().includes('STR 12 (+2)'));
 const ex = pb.generateTrackerExample.call ? (committedTrackerData.infoBox = '{"location":{"value":"x"}}', pb.generateTrackerExample()) : '';

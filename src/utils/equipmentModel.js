@@ -257,22 +257,22 @@ export function equipmentModifierSources(list) {
 }
 
 /** "🔒🗡️ Iron sword (STR +2), 🧪 Healing potion ×3" */
-export function formatItems(list, formatEffect = null) {
+export function formatItems(list, formatEffect = null, { icons = true } = {}) {
     return (list || []).map(raw => {
         const i = normalizeItem({ ...raw });
         const eff = formatEffect && Object.keys(i.effects).length ? formatEffect(i.effects) : '';
-        return `${i.aiCanRemove === false ? LOCK_MARK : ''}${i.icon || DEFAULT_ICON} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${eff ? ` (${eff})` : ''}`;
+        return `${i.aiCanRemove === false ? LOCK_MARK : ''}${icons ? `${i.icon || DEFAULT_ICON} ` : ''}${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${eff ? ` (${eff})` : ''}`;
     }).join(', ');
 }
 
 /** "Equipped: …; Backpack: …" */
-export function formatLoadout(list, formatEffect = null) {
+export function formatLoadout(list, formatEffect = null, { icons = true } = {}) {
     const items = (list || []).map(i => normalizeItem({ ...i }));
     const on = items.filter(i => i.equipped);
     const pack = items.filter(i => !i.equipped);
     const parts = [];
-    if (on.length) parts.push(`equipped: ${formatItems(on, formatEffect)}`);
-    if (pack.length) parts.push(`backpack: ${formatItems(pack)}`);
+    if (on.length) parts.push(`equipped: ${formatItems(on, formatEffect, { icons })}`);
+    if (pack.length) parts.push(`backpack: ${formatItems(pack, null, { icons })}`);
     return parts.join('; ');
 }
 
@@ -287,14 +287,22 @@ export function formatLoadout(list, formatEffect = null) {
 export function buildEquipmentPrompt(entries, { compact = true, standalone = false } = {}) {
     const list = (entries || []).filter(e => e && e.name);
     if (!list.length) return '';
-    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatLoadout(e.items, e.formatEffect) : 'nothing listed yet'}`);
+    // Compact prompts leave the icons out of the lists: the AI only needs
+    // them for items it adds.
+    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.items.length ? formatLoadout(e.items, e.formatEffect, { icons: !compact }) : 'nothing listed yet'}`);
     const seed = list.filter(e => e.needsGear).map(e => e.name);
     const player = list.find(e => e.isUser)?.name;
-    const example = JSON.stringify({ equipment: { [list[0].name]: {
-        add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain soldier\'s blade', equipped: true, effects: { STR: 1 } }, { icon: '🧪', name: 'Healing potion', qty: 2 }],
-        remove: [{ name: 'Torch' }, { name: 'Healing potion', qty: 1 }],
-        equip: ['Oak shield'], unequip: ['Cloak'],
-    } } });
+    const example = JSON.stringify({ equipment: { [list[0].name]: compact
+        ? {
+            add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain blade', equipped: true, effects: { STR: 1 } }],
+            remove: [{ name: 'Healing potion', qty: 1 }],
+            equip: ['Oak shield'], unequip: ['Cloak'],
+        }
+        : {
+            add: [{ icon: '🗡️', name: 'Iron sword', desc: 'Plain soldier\'s blade', equipped: true, effects: { STR: 1 } }, { icon: '🧪', name: 'Healing potion', qty: 2 }],
+            remove: [{ name: 'Torch' }, { name: 'Healing potion', qty: 1 }],
+            equip: ['Oak shield'], unequip: ['Cloak'],
+        } } });
     const where = standalone ? 'start your reply with ONE JSON code block' : 'add an "equipment" key to the same tracker JSON object';
     let out = compact
         ? 'EQUIPMENT (equipped = worn/in hand; backpack = carried):\n'
@@ -302,11 +310,11 @@ export function buildEquipmentPrompt(entries, { compact = true, standalone = fal
     out += lines.join('\n') + '\n';
     const playerNote = player
         ? (compact
-            ? ` — including anything ${player} takes out or uses in the user's message, even if never mentioned before`
+            ? `, incl. anything ${player} takes out in the user's message`
             : `. This includes anything ${player} takes out, shows or uses in the user's message, even if it was never mentioned before — the user decides what their character carries`)
         : '';
     out += compact
-        ? `Keep the lists true to the story. When someone gains an item (picks up, buys, is given) or is shown already having, wearing or using one that is not listed${playerNote}, or loses or uses up one, or puts one on / away, ${where}: ${example}. One emoji, a short name, a desc under 8 words; "qty" for stacks (remove with "qty" to use some up); "equipped": true for what is worn or held; "effects" only for real attribute bonuses (e.g. {"STR": 1}), applied while equipped — never change attributes yourself for them. ${LOCK_MARK} items can never be removed. Omit the key when nothing changes.`
+        ? `When someone gains, loses, uses up, puts on or puts away an item — or is shown having one not listed${playerNote} — ${where}: ${example}. One emoji, short name, desc under 8 words; "qty" for stacks; "effects" only for real attribute bonuses (applied while equipped). Never remove ${LOCK_MARK}. Omit the key when nothing changes.`
         : `EQUIPMENT CHANGES: keep these lists true to the story. Add an item when a character gains it — picks it up, buys it, is given it — or when the story shows them already having, wearing or using something that is not listed yet${playerNote}. Remove an item when they drop it, give it away, break it or use it up; for stacks, remove with a "qty" to use up only some. Use "equip" when they put something on or take it in hand and "unequip" when they put it away in the backpack. Write the change with ${where}, like ${example}. Each new item has one emoji icon, a short name, a description under 8 words, "qty" when there are several, "equipped": true if it is worn or held, and "effects" only for genuine attribute bonuses or maluses (e.g. {"STR": 1}) — DES applies them automatically while the item is equipped, so never raise or lower attributes yourself because of an item. Items marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
     if (seed.length) {
         out += compact

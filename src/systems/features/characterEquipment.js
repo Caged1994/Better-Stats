@@ -233,7 +233,7 @@ export function buildEquipmentContextSummary() {
     const lines = getStatCharacters()
         .map(({ name, isUser }) => ({ name, isUser, items: getEquipment(name, isUser) }))
         .filter(e => e.items.length)
-        .map(e => `${e.name} — ${formatLoadout(e.items, (eff) => describeEffects(e.name, e.isUser, eff))}`);
+        .map(e => `${e.name} — ${formatLoadout(e.items, (eff) => describeEffects(e.name, e.isUser, eff), { icons: false })}`);
     return lines.length ? 'Equipment:\n' + lines.join('\n') : '';
 }
 
