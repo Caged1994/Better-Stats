@@ -93,8 +93,8 @@ function debugLog(message, data = null) {
     }
 }
 /** Keys of the unified tracker object that are not trackers of their own. */
-const EXTRA_KEYS = ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells', 'xp', 'experience', 'levels'];
-const EXTRA_RESULT_KEYS = ['stats', 'memories', 'equipment', 'conditions', 'abilities', 'xp', 'levels'];
+const EXTRA_KEYS = ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells', 'xp', 'experience', 'levels', 'money', 'currency', 'affinity'];
+const EXTRA_RESULT_KEYS = ['stats', 'memories', 'equipment', 'conditions', 'abilities', 'xp', 'levels', 'money', 'currency', 'affinity'];
 
 /**
  * Copies the Better Stats keys of a parsed tracker object into `result` as
@@ -113,12 +113,15 @@ function extractExtraKeys(parsed, result) {
         abilities: pick('abilities', 'skills', 'spells'),
         xp: pick('xp', 'experience'),
         levels: parsed.levels,
+        money: parsed.money,
+        currency: parsed.currency,
+        affinity: parsed.affinity,
     };
     for (const key of EXTRA_RESULT_KEYS) {
         const v = src[key];
         if (result[key] || v === undefined || v === null) continue;
         // An XP award may come as a bare string ("medium: beat the bandits") or number.
-        if (typeof v === 'object' || (key === 'xp' && (typeof v === 'string' || typeof v === 'number'))) {
+        if (typeof v === 'object' || ((key === 'xp' || key === 'currency') && (typeof v === 'string' || typeof v === 'number'))) {
             result[key] = JSON.stringify(v);
         }
     }
@@ -155,7 +158,11 @@ export function parseResponse(responseText) {
         abilities: null,
         // Experience (characterProgress.js): the "xp" award and NPC "levels".
         xp: null,
-        levels: null
+        levels: null,
+        // Money (characterMoney.js) and affinity (characterAffinity.js).
+        money: null,
+        currency: null,
+        affinity: null
     };
     // DEBUG: Log full response for troubleshooting
     debugLog('[RPG Parser] ==================== PARSING AI RESPONSE ====================');

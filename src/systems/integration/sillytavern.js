@@ -42,6 +42,8 @@ import { applyAIEquipment, revertAIEquipmentForReplacedMessage, notifyBlockedRem
 import { applyAIConditions, revertAIConditionsForReplacedMessage } from '../features/characterConditions.js';
 import { applyAIAbilities, revertAIAbilitiesForReplacedMessage } from '../features/characterAbilities.js';
 import { applyAIProgress, revertAIProgressForReplacedMessage } from '../features/characterProgress.js';
+import { applyAIMoney, applyAICurrency, revertAIMoneyForReplacedMessage } from '../features/characterMoney.js';
+import { applyAIAffinity, revertAIAffinityForReplacedMessage } from '../features/characterAffinity.js';
 // Expression classification
 import { classifyAllCharacterExpressions, classifyActiveUserExpression, isExpressionSpritesModeEnabled } from './expressionSync.js';
 import { generateAutoPortraitsForCharacters, isAutoPortraitModeEnabled } from '../features/avatarGenerator.js';
@@ -225,6 +227,12 @@ export async function onMessageReceived(data) {
                     console.warn('[Dooms Tracker] XP: applying AI update failed', e);
                 }
             }
+            // Money (and a currency for a card that has none) and affinity.
+            if ((parsedData.currency || parsedData.money || parsedData.affinity) && isAwaitingNewMessage) {
+                try { if (parsedData.currency) applyAICurrency(parsedData.currency); } catch (e) { console.warn('[Dooms Tracker] Money: currency failed', e); }
+                try { if (parsedData.money) applyAIMoney(parsedData.money, chat.length - 1); } catch (e) { console.warn('[Dooms Tracker] Money: applying AI update failed', e); }
+                try { if (parsedData.affinity) applyAIAffinity(parsedData.affinity, chat.length - 1); } catch (e) { console.warn('[Dooms Tracker] Affinity: applying AI update failed', e); }
+            }
             if (parsedData.stats && isAwaitingNewMessage) {
                 try {
                     applyAIStatUpdates(parsedData.stats, chat.length - 1);
@@ -244,7 +252,7 @@ export async function onMessageReceived(data) {
             // System Log so a missing update can be told apart from a
             // reply that never contained one.
             if (isAwaitingNewMessage) {
-                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}, xp: ${parsedData.xp || 'no'}, levels: ${parsedData.levels || 'no'}`);
+                console.log(`[Dooms Tracker] Reply trackers — stats: ${parsedData.stats ? 'yes' : 'no'}, equipment: ${parsedData.equipment || 'no'}, conditions: ${parsedData.conditions || 'no'}, abilities: ${parsedData.abilities || 'no'}, memories: ${parsedData.memories || 'no'}, xp: ${parsedData.xp || 'no'}, levels: ${parsedData.levels || 'no'}, money: ${parsedData.money || 'no'}, affinity: ${parsedData.affinity || 'no'}`);
             }
             // Spells & Abilities: same rule.
             if (parsedData.abilities && isAwaitingNewMessage) {
@@ -523,6 +531,8 @@ export function onMessageSwiped(messageIndex) {
         try { revertAIConditionsForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIAbilitiesForReplacedMessage(messageIndex); } catch (e) {}
         try { revertAIProgressForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIMoneyForReplacedMessage(messageIndex); } catch (e) {}
+        try { revertAIAffinityForReplacedMessage(messageIndex); } catch (e) {}
     } else {
         // This is navigating to an EXISTING swipe - don't change the flag
     }

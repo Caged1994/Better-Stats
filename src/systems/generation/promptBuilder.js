@@ -20,8 +20,12 @@ import { buildEquipmentPromptForGeneration, buildEquipmentContextSummary, isEqui
 import { buildConditionsPromptForGeneration, buildConditionsContextSummary, isConditionsEnabled } from '../features/characterConditions.js';
 import { buildAbilitiesPromptForGeneration, buildAbilitiesContextSummary, isAbilitiesEnabled } from '../features/characterAbilities.js';
 import { buildProgressPromptForGeneration, buildProgressContextSummary } from '../features/characterProgress.js';
+import { buildMoneyPromptForGeneration, buildMoneyContextSummary } from '../features/characterMoney.js';
+import { buildAffinityPromptForGeneration, buildAffinityContextSummary } from '../features/characterAffinity.js';
 // Registers the attribute-modifier provider the stats prompt uses.
 import '../features/characterModifiers.js';
+// Automatic consequences register on the stat values here.
+import '../features/characterConsequences.js';
 // NOTE: InventoryV2 type import removed — inventory system removed (see git history)
 /**
  * Default HTML prompt text
@@ -339,6 +343,11 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         // Experience and levels.
         const progressSection = buildProgressPromptForGeneration({ compact });
         if (progressSection) instructions += '\n\n' + progressSection;
+        // Money and affinity.
+        const moneySection = buildMoneyPromptForGeneration({ compact });
+        if (moneySection) instructions += '\n\n' + moneySection;
+        const affinitySection = buildAffinityPromptForGeneration({ compact });
+        if (affinitySection) instructions += '\n\n' + affinitySection;
         // Only add continuation instruction if includeContinuation is true
         if (includeContinuation) {
             const customPrompt = extensionSettings.customTrackerContinuationPrompt;
@@ -360,8 +369,12 @@ export function generateTrackerInstructions(includeHtmlPrompt = true, includeCon
         const conditionsSection = buildConditionsPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection });
         const abilitiesSection = buildAbilitiesPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection && !conditionsSection });
         const progressSection = buildProgressPromptForGeneration({ compact, standalone: !statsSection && !memoriesSection && !equipmentSection && !conditionsSection && !abilitiesSection });
-        if (statsSection || memoriesSection || equipmentSection || conditionsSection || abilitiesSection || progressSection) {
-            instructions += '\n' + [statsSection, memoriesSection, equipmentSection, conditionsSection, abilitiesSection, progressSection].filter(Boolean).join('\n\n');
+        const earlier = [statsSection, memoriesSection, equipmentSection, conditionsSection, abilitiesSection, progressSection].some(Boolean);
+        const moneySection = buildMoneyPromptForGeneration({ compact, standalone: !earlier });
+        const affinitySection = buildAffinityPromptForGeneration({ compact, standalone: !earlier && !moneySection });
+        const all = [statsSection, memoriesSection, equipmentSection, conditionsSection, abilitiesSection, progressSection, moneySection, affinitySection].filter(Boolean);
+        if (all.length) {
+            instructions += '\n' + all.join('\n\n');
             if (includeContinuation) {
                 instructions += '\n\nThen continue the story directly from the last message, letting the stats shape what the characters can do and how they feel.\n\n';
             }
@@ -822,6 +835,10 @@ export function generateContextualSummary() {
         if (abilities) summary += abilities + '\n';
         const levels = buildProgressContextSummary();
         if (levels) summary += levels + '\n';
+        const money = buildMoneyContextSummary();
+        if (money) summary += money + '\n';
+        const affinity = buildAffinityContextSummary();
+        if (affinity) summary += affinity + '\n';
     } catch (e) {
         console.warn('[Dooms Tracker] Failed to format character stats for context:', e);
     }

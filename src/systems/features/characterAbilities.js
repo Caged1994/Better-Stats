@@ -28,9 +28,12 @@ import {
     applyAbilityChange,
     buildAbilitiesPrompt,
     formatAbilities,
+    MANA_COSTS,
+    resolveManaTiers,
+    normalizeManaCost,
 } from '../../utils/abilityModel.js';
 import { cleanIcon } from '../../utils/equipmentModel.js';
-import { getStatCharacters, statKey, notifyStatsChanged } from './characterStats.js';
+import { getStatCharacters, statKey, notifyStatsChanged, getDisabledStatIds, isCharacterStatsEnabled } from './characterStats.js';
 import { resolveTarget, resolveEffectsFor, describeEffects } from './characterEquipment.js';
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -74,6 +77,29 @@ export function getAbilities(name, isUser = false) {
     return Array.isArray(list) ? list : [];
 }
 
+// ─── Mana costs ─────────────────────────────────────────────────────────────
+
+/** The Mana amount of each cost tier (Settings → RPG & Stats). */
+export function getManaTiers() {
+    return resolveManaTiers(extensionSettings.manaCostTiers);
+}
+
+export function setManaTier(tier, value) {
+    if (!MANA_COSTS.includes(tier)) return;
+    extensionSettings.manaCostTiers = resolveManaTiers({ ...getManaTiers(), [tier]: value });
+    saveSettings();
+    notifyStatsChanged({ source: 'settings' });
+}
+
+/**
+ * The tiers while the Mana bar is in use, or null when it is switched off —
+ * then spells are free and their cost is neither shown nor sent.
+ */
+export function activeManaTiers() {
+    if (getDisabledStatIds().includes('mana') || !isCharacterStatsEnabled()) return null;
+    return getManaTiers();
+}
+
 function changed(detail) {
     saveChatScope();
     notifyStatsChanged({ source: 'abilities', ...detail });
@@ -107,6 +133,8 @@ export function updateAbility(name, isUser, id, changes = {}) {
     if (changes.type !== undefined) a.type = normalizeAbilityType(changes.type);
     if (typeof changes.aiCanRemove === 'boolean') a.aiCanRemove = changes.aiCanRemove;
     if (changes.effects !== undefined) a.effects = resolveEffectsFor(name, isUser, changes.effects);
+    if (changes.cost !== undefined) a.cost = a.type === 'spell' ? normalizeManaCost(changes.cost) : null;
+    if (a.type !== 'spell') a.cost = null;
     changed({ name });
     return true;
 }
@@ -189,7 +217,7 @@ export function buildAbilitiesPromptForGeneration({ compact = true, standalone =
         needsSeed: needsStartingAbilities(name, isUser),
         formatEffect: (eff) => describeEffects(name, isUser, eff),
     }));
-    return buildAbilitiesPrompt(entries, { compact, standalone });
+    return buildAbilitiesPrompt(entries, { compact, standalone, manaTiers: activeManaTiers() });
 }
 
 export function buildAbilitiesContextSummary() {
@@ -197,7 +225,7 @@ export function buildAbilitiesContextSummary() {
     const lines = getStatCharacters()
         .map(({ name, isUser }) => ({ name, isUser, list: getAbilities(name, isUser) }))
         .filter(e => e.list.length)
-        .map(e => `${e.name} — ${formatAbilities(e.list, (eff) => describeEffects(e.name, e.isUser, eff), { icons: false })}`);
+        .map(e => `${e.name} — ${formatAbilities(e.list, (eff) => describeEffects(e.name, e.isUser, eff), { icons: false, manaTiers: activeManaTiers() })}`);
     return lines.length ? 'Spells & abilities:\n' + lines.join('\n') : '';
 }
 

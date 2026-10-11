@@ -1303,3 +1303,81 @@ input.dsp-xp-big { width: 3em; font-size: 20px; text-align: center; }
 }
 .dsp-rpg-off > i { font-size: 30px; color: var(--dsp-muted); }
 .dsp-rpg-off p { margin: 0; }
+
+/* Mana cost of a spell */
+.dsp-mana-cost {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: #9fd0ff;
+    background: rgba(80, 150, 255, 0.14);
+    border: 1px solid rgba(120, 180, 255, 0.35);
+    white-space: nowrap;
+}
+.dsp-item-in-cost {
+    font: inherit;
+    font-size: 12px;
+    color: var(--dsp-text);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--dsp-border);
+    border-radius: 8px;
+    padding: 4px 6px;
+}
+
+/* Automatic conditions (follow a low stat bar) */
+.dsp-cond.is-auto { border-style: dashed; }
+.dsp-cond-auto {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--dsp-muted);
+    padding: 0 4px;
+}
+
+/* Money and affinity chips under the name */
+.dsp-hero-extras {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+.dsp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--dsp-text);
+    border-radius: 999px;
+    border: 1px solid var(--dsp-border);
+    background: var(--dsp-card);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.dsp-chip:hover { background: var(--dsp-card-hover); }
+.dsp-chip.is-dim { color: var(--dsp-muted); cursor: default; }
+.dsp-affinity { border-color: color-mix(in srgb, var(--dsp-aff) 55%, transparent); }
+.dsp-aff-heart { color: var(--dsp-aff); }
+.dsp-aff-bar {
+    position: relative;
+    width: 46px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+.dsp-aff-bar::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.35);
+}
+.dsp-aff-bar span { display: block; height: 100%; background: var(--dsp-aff); }
+.dsp-chip-input { width: 6em; font-size: 12px; }

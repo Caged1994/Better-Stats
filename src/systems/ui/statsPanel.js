@@ -31,7 +31,7 @@ import { getCharacterList, resolveActiveUserName, resolvePortrait } from './port
 import { getEquipment, addItem, updateItem, removeItem, isEquipmentEnabled, needsStartingGear, requestStartingGear, cancelStartingGear, describeEffects } from '../features/characterEquipment.js';
 import { getConditions, addCondition, updateCondition, removeCondition, isConditionsEnabled } from '../features/characterConditions.js';
 import {
-    getAbilities, addAbility, updateAbility, removeAbility, isAbilitiesEnabled,
+    getAbilities, addAbility, updateAbility, removeAbility, isAbilitiesEnabled, activeManaTiers,
     needsStartingAbilities, requestStartingAbilities, cancelStartingAbilities,
 } from '../features/characterAbilities.js';
 import { ABILITY_EMOJI, DEFAULT_SPELL_ICON, DEFAULT_ABILITY_ICON } from '../../utils/abilityModel.js';
@@ -47,6 +47,9 @@ import {
 } from '../features/characterProgress.js';
 import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
 import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
+import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
+import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
+import { affinityTier } from '../../utils/affinityModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
 const POPOUT_NAME = 'dooms-stats-popout';
@@ -60,7 +63,7 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
 // editId: the entry being edited (null = adding a new one).
-const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', error: '' };
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '' };
 const itemForm = { ...FORM_DEFAULTS };
 
 // Section tabs inside the panel. The last one used is remembered.
@@ -240,6 +243,28 @@ function pointButtons(stat, base, prog) {
     </div>`;
 }
 
+/** Money (persona and party) and affinity toward the persona (NPCs), under the name. */
+function heroExtrasHtml() {
+    const parts = [];
+    if (isMoneyEnabled() && hasPurse(selected.name, selected.isUser)) {
+        const m = getMoney(selected.name, selected.isUser);
+        const cur = getCurrency();
+        parts.push(`<button type="button" class="dsp-chip dsp-money" data-edit="money" title="${cur ? `Money (${escapeHtml(cur.name)})` : 'Money — set the currency for this card in Settings → RPG & Stats'} — click to change">💰 ${m === null ? '—' : escapeHtml(formatAmount(m))}</button>`);
+    }
+    if (isAffinityEnabled() && !selected.isUser) {
+        const rec = getAffinityRecord(selected.name);
+        if (rec) {
+            const t = affinityTier(rec.value);
+            const pct = (rec.value + 100) / 2;
+            parts.push(`<button type="button" class="dsp-chip dsp-affinity" data-edit="affinity" style="--dsp-aff:${t.color}" title="Feelings toward your character: ${rec.value > 0 ? '+' : ''}${rec.value} (${t.label})${rec.reason ? ` — last change: ${escapeHtml(rec.reason)}` : ''}. Click to change.">
+                <span class="dsp-aff-heart">❤</span><span class="dsp-aff-bar"><span style="width:${pct}%"></span></span><span>${rec.value > 0 ? '+' : ''}${rec.value} ${t.label}</span></button>`);
+        } else {
+            parts.push('<span class="dsp-chip is-dim" title="The AI gives a starting value in its next reply">❤ —</span>');
+        }
+    }
+    return parts.length ? `<span class="dsp-hero-extras">${parts.join('')}</span>` : '';
+}
+
 /** Level badge + XP bar in the hero. */
 function heroLevelHtml() {
     if (!isProgressEnabled() || !hasLevel(selected.name, selected.isUser)) return '';
@@ -363,6 +388,7 @@ function buildHtml({ popout }) {
                 <div class="dsp-hero-text">
                     <span class="dsp-hero-name">${escapeHtml(selected.name)}${heroLevelHtml()}</span>
                     <span class="dsp-hero-sub">${selected.isUser ? 'Your character' : 'Character'}${campaign ? ` · ${escapeHtml(campaign)}` : ''}</span>
+                    ${heroExtrasHtml()}
                 </div>
                 <button type="button" class="dsp-text-btn" data-action="reset" title="Put every stat back to the starting values set in the Workshop">
                     <i class="fa-solid fa-rotate-left"></i> Reset
@@ -438,11 +464,17 @@ function startProgressEdit(button) {
     const doc = button.ownerDocument;
     const input = doc.createElement('input');
     input.type = 'number';
-    input.min = field === 'level' ? '1' : '0';
-    input.max = field === 'level' ? String(MAX_LEVEL) : '999';
-    input.step = '1';
-    input.value = String(field === 'level' ? prog.level : prog.points);
-    input.className = 'dsp-value-input dsp-xp-big';
+    const range = {
+        level: ['1', String(MAX_LEVEL), '1', prog.level],
+        points: ['0', '999', '1', prog.points],
+        money: ['0', '', '0.01', getMoney(selected.name, selected.isUser) ?? 0],
+        affinity: ['-100', '100', '1', getAffinityRecord(selected.name)?.value ?? 0],
+    }[field];
+    input.min = range[0];
+    if (range[1]) input.max = range[1];
+    input.step = range[2];
+    input.value = String(range[3]);
+    input.className = field === 'level' || field === 'points' ? 'dsp-value-input dsp-xp-big' : 'dsp-value-input dsp-chip-input';
     button.replaceWith(input);
     input.focus();
     input.select();
@@ -451,10 +483,13 @@ function startProgressEdit(button) {
     const finish = (commit) => {
         if (done) return;
         done = true;
-        const n = Math.round(Number(input.value));
-        if (commit && Number.isFinite(n)) {
+        const raw = Number(input.value);
+        const n = Math.round(raw);
+        if (commit && Number.isFinite(raw) && input.value !== '') {
             if (field === 'level' && n !== prog.level) setLevel(who.name, who.isUser, n);
             else if (field === 'points' && n !== prog.points) setUnspentPoints(who.name, who.isUser, n);
+            else if (field === 'money' && raw !== range[3]) setMoney(who.name, who.isUser, raw);
+            else if (field === 'affinity' && n !== range[3]) setAffinity(who.name, n);
         }
         input.blur();
         renderAll();
@@ -539,6 +574,7 @@ function formHtml(kind) {
     const isItem = kind === 'item';
     const isAbility = kind === 'ability';
     const emoji = isItem ? ITEM_EMOJI : (isAbility ? ABILITY_EMOJI : CONDITION_EMOJI);
+    const mana = isAbility ? activeManaTiers() : null;
     const iconPh = isItem ? DEFAULT_ICON : (isAbility ? (f.type === 'spell' ? DEFAULT_SPELL_ICON : DEFAULT_ABILITY_ICON) : DEFAULT_CONDITION_ICON);
     const namePh = isItem ? 'Item name' : (isAbility ? 'Name (e.g. Fireball, Lockpicking)' : 'Condition (e.g. Poisoned)');
     const effPh = isItem ? 'Effects while equipped, e.g. STR +2, DEX -1 (optional)'
@@ -554,6 +590,10 @@ function formHtml(kind) {
                 ${isAbility ? `<select class="dsp-item-in-type" aria-label="Type">
                     <option value="spell"${f.type === 'spell' ? ' selected' : ''}>Spell</option>
                     <option value="ability"${f.type !== 'spell' ? ' selected' : ''}>Ability</option></select>` : ''}
+                ${isAbility && f.type === 'spell' && mana ? `<select class="dsp-item-in-cost" aria-label="Mana cost" title="Mana cost">
+                    <option value=""${!f.cost ? ' selected' : ''}>Free</option>
+                    ${['light', 'medium', 'heavy'].map(t => `<option value="${t}"${f.cost === t ? ' selected' : ''}>${t[0].toUpperCase() + t.slice(1)} · ${mana[t]} Mana</option>`).join('')}
+                    </select>` : ''}
             </div>
             <div class="dsp-emoji-grid" role="listbox" aria-label="Pick an icon">
                 ${emoji.map(e => `<button type="button" class="dsp-emoji${f.icon === e ? ' is-on' : ''}" data-emoji="${escapeHtml(e)}">${e}</button>`).join('')}
@@ -586,6 +626,7 @@ function openEdit(kind, id) {
         effects: e.effects && Object.keys(e.effects).length ? effectText(e.effects) : '',
         qty: String(e.qty || 1), equipped: !!e.equipped,
         aiCanRemove: e.aiCanRemove !== false, type: e.type === 'spell' ? 'spell' : 'ability',
+        cost: e.cost || '',
     });
     renderAll();
 }
@@ -631,12 +672,13 @@ function conditionsHtml() {
                 ${formOpen ? '' : '<button type="button" class="dsp-text-btn dsp-item-new" data-action="item-open" data-kind="condition"><i class="fa-solid fa-plus"></i> Add</button>'}</h3>
             ${list.length ? `<div class="dsp-conds">${list.map(c => {
                 const eff = effectText(c.effects);
-                const tip = [c.name, c.desc, eff].filter(Boolean).join(' — ');
-                return `<span class="dsp-cond" data-id="${escapeHtml(c.id)}" data-tip="${escapeHtml(tip)}" tabindex="0" aria-label="${escapeHtml(tip)}">
+                const auto = c.source === 'auto';
+                const tip = [c.name, c.desc, eff, auto && 'automatic: ends by itself when the bar recovers'].filter(Boolean).join(' — ');
+                return `<span class="dsp-cond${auto ? ' is-auto' : ''}" data-id="${escapeHtml(c.id)}" data-tip="${escapeHtml(tip)}" tabindex="0" aria-label="${escapeHtml(tip)}">
                     <span class="dsp-cond-icon">${escapeHtml(c.icon || DEFAULT_CONDITION_ICON)}</span>
-                    <span class="dsp-cond-name dsp-edit-open" title="Click to edit">${escapeHtml(c.name)}</span>
+                    <span class="dsp-cond-name${auto ? '' : ' dsp-edit-open'}" title="${auto ? 'Follows a low stat bar' : 'Click to edit'}">${escapeHtml(c.name)}</span>
                     ${eff ? `<span class="dsp-cond-eff">${escapeHtml(eff)}</span>` : ''}
-                    <button type="button" class="dsp-cond-remove" title="End ${escapeHtml(c.name)}"><i class="fa-solid fa-xmark"></i></button>
+                    ${auto ? '<span class="dsp-cond-auto" title="Automatic — follows a low stat bar">auto</span>' : `<button type="button" class="dsp-cond-remove" title="End ${escapeHtml(c.name)}"><i class="fa-solid fa-xmark"></i></button>`}
                 </span>`;
             }).join('')}</div>` : ''}
             ${formHtml('condition')}
@@ -646,7 +688,9 @@ function conditionsHtml() {
 function abilityRowHtml(a) {
     const locked = a.aiCanRemove === false;
     const eff = effectText(a.effects);
-    const tip = [a.name, a.desc, eff && `${eff} (passive)`].filter(Boolean).join(' — ');
+    const mana = activeManaTiers();
+    const cost = mana && a.type === 'spell' && a.cost ? mana[a.cost] : null;
+    const tip = [a.name, a.desc, cost !== null && `${cost} Mana (${a.cost})`, eff && `${eff} (passive)`].filter(Boolean).join(' — ');
     return `
         <div class="dsp-item dsp-ability${locked ? ' is-locked' : ''}" data-id="${escapeHtml(a.id)}" data-tip="${escapeHtml(tip)}">
             <span class="dsp-item-icon" tabindex="0" aria-label="${escapeHtml(tip)}">${escapeHtml(a.icon)}</span>
@@ -654,6 +698,7 @@ function abilityRowHtml(a) {
                 <span class="dsp-item-name">${escapeHtml(a.name)}</span>
                 ${eff ? `<span class="dsp-item-eff">${escapeHtml(eff)}</span>` : ''}
             </span>
+            ${cost !== null ? `<span class="dsp-mana-cost" title="${cost} Mana (${escapeHtml(a.cost)})">💧${cost}</span>` : ''}
             <button type="button" class="dsp-item-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
             <button type="button" class="dsp-item-lock" aria-pressed="${locked}"
                 title="${locked ? 'Locked: the AI cannot remove it. Click to let the AI remove it' : 'The AI can remove it. Click to lock it'}">
@@ -696,12 +741,12 @@ function submitItemForm() {
     let res;
     if (f.editId) {
         if (f.kind === 'condition') res = updateCondition(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects });
-        else if (f.kind === 'ability') res = updateAbility(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, aiCanRemove: f.aiCanRemove });
+        else if (f.kind === 'ability') res = updateAbility(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, cost: f.cost || null, aiCanRemove: f.aiCanRemove });
         else res = updateItem(...who, f.editId, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, qty: f.qty, equipped: f.equipped, aiCanRemove: f.aiCanRemove });
     } else if (f.kind === 'condition') {
         res = addCondition(...who, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects });
     } else if (f.kind === 'ability') {
-        res = addAbility(...who, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, aiCanRemove: f.aiCanRemove });
+        res = addAbility(...who, { icon: f.icon, name: f.name, desc: f.desc, effects: f.effects, type: f.type, cost: f.cost || null, aiCanRemove: f.aiCanRemove });
     } else {
         res = addItem(...who, {
             icon: f.icon, name: f.name, desc: f.desc, effects: f.effects,
@@ -1005,7 +1050,7 @@ function bindRootListeners(root) {
             removeLogEntry(selected.name, selected.isUser, logRow.getAttribute('data-id'));
             return;
         }
-        const progEdit = e.target.closest('button.dsp-value[data-edit]');
+        const progEdit = e.target.closest('button.dsp-value[data-edit], button.dsp-chip[data-edit]');
         if (progEdit) { startProgressEdit(progEdit); return; }
         const value = e.target.closest('button.dsp-value');
         if (value) { startEdit(value); return; }
@@ -1057,7 +1102,8 @@ function bindRootListeners(root) {
     root.addEventListener('change', (e) => {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
-        if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; }
+        if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; renderAll(); }
+        if (e.target.classList && e.target.classList.contains('dsp-item-in-cost')) { itemForm.cost = e.target.value; }
         if (e.target.classList && e.target.classList.contains('dsp-party-toggle') && selected && !selected.isUser) setPartyMember(selected.name, e.target.checked);
     });
     root.addEventListener('keydown', (e) => {

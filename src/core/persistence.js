@@ -593,6 +593,9 @@ export function saveChatData({ immediate = false } = {}) {
         abilitiesUndo: chat_metadata.dooms_tracker?.abilitiesUndo || null,
         // Undo for the XP and NPC levels of the last reply (characterProgress.js).
         xpUndo: chat_metadata.dooms_tracker?.xpUndo || null,
+        // Undo for the money and affinity changes of the last reply.
+        moneyUndo: chat_metadata.dooms_tracker?.moneyUndo || null,
+        affinityUndo: chat_metadata.dooms_tracker?.affinityUndo || null,
         // Better Stats data that belongs to this chat — current stat values,
         // memories, equipment, conditions, abilities, XP (chatScope.js).
         betterStats: chat_metadata.dooms_tracker?.betterStats || {},

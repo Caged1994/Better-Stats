@@ -35,6 +35,10 @@ import {
 } from '../features/rpgMode.js';
 import { getXpSettings, setXpSetting, setLevelsEnabled, setXpEnabled } from '../features/characterProgress.js';
 import { XP_SIZES } from '../../utils/xpModel.js';
+import { getManaTiers, setManaTier } from '../features/characterAbilities.js';
+import { setMoneyEnabled, getCurrency, setCurrency } from '../features/characterMoney.js';
+import { setAffinityEnabled } from '../features/characterAffinity.js';
+import { setConsequencesEnabled } from '../features/characterConsequences.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -108,6 +112,9 @@ export function initStatsSettings() {
     flag('rpg-memories-enabled', 'characterMemoriesEnabled');
     flag('rpg-levels-enabled', 'characterLevelsEnabled');
     flag('rpg-xp-enabled', 'characterXpEnabled');
+    flag('rpg-money-enabled', 'characterMoneyEnabled');
+    flag('rpg-affinity-enabled', 'characterAffinityEnabled');
+    flag('rpg-consequences-enabled', 'autoConsequences');
     const memRecent = document.getElementById('rpg-memories-recent');
     if (memRecent) memRecent.value = String(getRecentLimit());
     renderXpSettings();
@@ -131,6 +138,16 @@ export function initStatsSettings() {
         else if (el.id === 'rpg-xp-quest-main') setXpSetting('questMain', el.value);
         else if (el.id === 'rpg-xp-quest-optional') setXpSetting('questOptional', el.value);
         else if (el.id && el.id.startsWith('rpg-xp-') && XP_SIZES.includes(el.id.slice(7))) { setXpSetting(el.id.slice(7), el.value); renderXpSettings(); }
+        else if (el.id === 'rpg-money-enabled') setMoneyEnabled(el.checked);
+        else if (el.id === 'rpg-affinity-enabled') setAffinityEnabled(el.checked);
+        else if (el.id === 'rpg-consequences-enabled') setConsequencesEnabled(el.checked);
+        else if (el.id && el.id.startsWith('rpg-mana-')) { setManaTier(el.id.slice(9), el.value); renderXpSettings(); }
+        else if (el.id === 'rpg-currency-name' || el.id === 'rpg-currency-symbol') {
+            const name = document.getElementById('rpg-currency-name')?.value || '';
+            const symbol = document.getElementById('rpg-currency-symbol')?.value || '';
+            setCurrency(name.trim() || symbol.trim() ? { name, symbol } : null);
+            renderRpgModeSettings();
+        }
         else if (el.id === 'rpg-mode-default') setDefaultRpgMode(el.checked);
         else if (el.id === 'rpg-mode-card') setCardRpgMode(el.value === 'on' ? true : el.value === 'off' ? false : null);
         else if (el.id === 'rpg-mode-chat') setChatRpgMode(el.value === 'on' ? true : el.value === 'off' ? false : null);
@@ -160,6 +177,7 @@ export function initStatsSettings() {
         const active = document.activeElement;
         if (active && active.classList && active.classList.contains('rpg-stat-color')) return;
         renderStatsSettings();
+        renderRpgModeSettings(); // e.g. the AI picked this card's currency
     });
 }
 
@@ -172,6 +190,8 @@ export function renderXpSettings() {
     set('rpg-xp-points', x.pointsPerLevel);
     set('rpg-xp-quest-main', x.questMain);
     set('rpg-xp-quest-optional', x.questOptional);
+    const mana = getManaTiers();
+    for (const t of ['light', 'medium', 'heavy']) set(`rpg-mana-${t}`, mana[t]);
     const hint = document.getElementById('rpg-xp-curve-hint');
     if (hint) {
         const p = x.perLevel;
@@ -192,6 +212,14 @@ export function renderRpgModeSettings() {
     }
     const cardName = document.getElementById('rpg-mode-card-name');
     if (cardName) cardName.textContent = hasCard && currentCardName() ? ` (${currentCardName()})` : '';
+    // The currency belongs to the card too.
+    const cur = getCurrency();
+    for (const [id, v] of [['rpg-currency-name', cur?.name || ''], ['rpg-currency-symbol', cur?.symbol || '']]) {
+        const el = document.getElementById(id);
+        if (el) { if (document.activeElement !== el) el.value = v; el.disabled = !hasCard; }
+    }
+    const curCard = document.getElementById('rpg-currency-card');
+    if (curCard) curCard.textContent = hasCard && currentCardName() ? ` (${currentCardName()})` : '';
     const chatSel = document.getElementById('rpg-mode-chat');
     if (chatSel) chatSel.value = val(getChatRpgMode());
     const status = document.getElementById('rpg-mode-status');

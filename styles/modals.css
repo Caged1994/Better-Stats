@@ -8366,3 +8366,7 @@ body.dooms-perf-mode #character-workshop-popup .cw-version-add {
 .rpg-quest-actions .rpg-quest-drop {
     opacity: 0.6;
 }
+
+.rpg-currency-fields { display: flex; gap: 6px; }
+.rpg-setting-row .rpg-currency-fields input { width: 7em; max-width: none; text-align: left; }
+.rpg-setting-row .rpg-currency-fields input#rpg-currency-symbol { width: 4em; }

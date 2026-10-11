@@ -86,6 +86,8 @@ import { fadedIds } from '../../utils/memoryModel.js';
 import { deleteEquipmentEverywhere } from '../features/characterEquipment.js';
 import { deleteConditionsEverywhere } from '../features/characterConditions.js';
 import { deleteProgressEverywhere, requestLevelGeneration } from '../features/characterProgress.js';
+import { deleteMoney } from '../features/characterMoney.js';
+import { deleteAffinity } from '../features/characterAffinity.js';
 import { deleteAbilitiesEverywhere } from '../features/characterAbilities.js';
 
 /**
@@ -3287,6 +3289,7 @@ function deleteCharacter(name) {
         deleteEquipmentEverywhere(name, true);
         deleteConditionsEverywhere(name, true);
         deleteProgressEverywhere(name, true);
+        deleteMoney(name, true);
         deleteAbilitiesEverywhere(name, true);
         saveOrWarn(saveSettings, 'settings');
         // A persona copied from an NPC shares the NPC's portrait file —
@@ -3320,6 +3323,8 @@ function deleteCharacter(name) {
     deleteEquipmentEverywhere(name, false);
     deleteConditionsEverywhere(name, false);
     deleteProgressEverywhere(name, false);
+    deleteMoney(name, false);
+    deleteAffinity(name);
     deleteAbilitiesEverywhere(name, false);
     // When perChatCharacterTracking is on, knownCharacters/characterColors
     // live on chat_metadata. Without wiping those, the Roster grid (which

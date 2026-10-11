@@ -1138,6 +1138,18 @@
                             <span class="rpg-toggle-slider"></span>
                         </label>
                     </div>
+                    <div class="rpg-setting-row rpg-setting-row-wrap">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Mana cost of spells</span>
+                            <span class="rpg-setting-hint">Points of the Mana bar a light, medium or heavy spell uses. With the
+                                Mana bar switched off spells are free and no cost is shown.</span>
+                        </div>
+                        <div class="rpg-xp-tiers">
+                        <label class="rpg-xp-tier"><span>Light</span><input type="number" id="rpg-mana-light" class="rpg-accordion-select" min="0" max="100" step="1" /></label>
+                        <label class="rpg-xp-tier"><span>Medium</span><input type="number" id="rpg-mana-medium" class="rpg-accordion-select" min="0" max="100" step="1" /></label>
+                        <label class="rpg-xp-tier"><span>Heavy</span><input type="number" id="rpg-mana-heavy" class="rpg-accordion-select" min="0" max="100" step="1" /></label>
+                        </div>
+                    </div>
 
                     <div class="rpg-subsection-label" style="margin-top:16px;">Conditions</div>
                     <div class="rpg-setting-row">
@@ -1148,6 +1160,51 @@
                         </div>
                         <label class="rpg-toggle-switch">
                             <input type="checkbox" id="rpg-conditions-enabled" />
+                            <span class="rpg-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Automatic consequences</span>
+                            <span class="rpg-setting-hint">Low bars bring conditions by themselves and end them when the bar recovers: Health 0 → Unconscious, ≤20 → Badly wounded; Satiety ≤30 → Hungry, ≤10 → Starving; Energy ≤25 → Tired, ≤10 → Exhausted; Hygiene ≤15 → Filthy; Morale ≤25 → Downcast, ≤10 → Despairing; Mana 0 → Mana drained. They carry small attribute maluses; the AI cannot remove them.</span>
+                        </div>
+                        <label class="rpg-toggle-switch">
+                            <input type="checkbox" id="rpg-consequences-enabled" />
+                            <span class="rpg-toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="rpg-subsection-label" style="margin-top:16px;">Money</div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Money</span>
+                            <span class="rpg-setting-hint">Your character and the party members have money; the AI changes it when they pay, earn or find some.</span>
+                        </div>
+                        <label class="rpg-toggle-switch">
+                            <input type="checkbox" id="rpg-money-enabled" />
+                            <span class="rpg-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Currency of this card<span id="rpg-currency-card"></span></span>
+                            <span class="rpg-setting-hint">Name and symbol (euro €, credits ¢, gold crowns…). Leave empty and the AI
+                                picks one that fits the setting.</span>
+                        </div>
+                        <div class="rpg-currency-fields">
+                            <input type="text" id="rpg-currency-name" class="rpg-accordion-select" placeholder="Name" maxlength="30" />
+                            <input type="text" id="rpg-currency-symbol" class="rpg-accordion-select" placeholder="Symbol" maxlength="6" />
+                        </div>
+                    </div>
+
+                    <div class="rpg-subsection-label" style="margin-top:16px;">Affinity</div>
+                    <div class="rpg-setting-row">
+                        <div class="rpg-setting-label-group">
+                            <span class="rpg-setting-label">Affinity</span>
+                            <span class="rpg-setting-hint">How each character feels about yours, from −100 (hostile) to +100 (close). The AI gives a starting value and moves it a little (at most ±10 per reply) when your actions matter to them.</span>
+                        </div>
+                        <label class="rpg-toggle-switch">
+                            <input type="checkbox" id="rpg-affinity-enabled" />
                             <span class="rpg-toggle-slider"></span>
                         </label>
                     </div>

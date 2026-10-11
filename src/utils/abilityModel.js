@@ -8,7 +8,10 @@
  * attribute effects (Iron skin: CON +2) that always apply.
  *
  * Shape: { id, icon, name, desc, type: 'spell'|'ability', effects,
- *          aiCanRemove, source: 'ai'|'user', createdAt }
+ *          cost: null|'light'|'medium'|'heavy', aiCanRemove, source: 'ai'|'user', createdAt }
+ *
+ * Spells can cost Mana. The cost is a tier (light / medium / heavy) whose
+ * amount the user sets (default 5 / 15 / 30 points of the Mana bar).
  */
 import { cleanIcon, splitLeadingEmoji, itemKey, LOCK_MARK } from './equipmentModel.js';
 
@@ -18,6 +21,41 @@ export const DEFAULT_SPELL_ICON = '🔮';
 export const DEFAULT_ABILITY_ICON = '⭐';
 export const MAX_ABILITIES = 40;
 export const ABILITY_TYPES = ['spell', 'ability'];
+export const MANA_COSTS = ['light', 'medium', 'heavy'];
+export const DEFAULT_MANA_TIERS = { light: 5, medium: 15, heavy: 30 };
+
+const COST_WORDS = {
+    light: 'light', low: 'light', minor: 'light', small: 'light', cheap: 'light', weak: 'light',
+    medium: 'medium', moderate: 'medium', normal: 'medium', average: 'medium', mid: 'medium',
+    heavy: 'heavy', high: 'heavy', major: 'heavy', large: 'heavy', strong: 'heavy', expensive: 'heavy', big: 'heavy',
+};
+
+/** The user's Mana amounts per tier (each 0–100). */
+export function resolveManaTiers(custom) {
+    const out = { ...DEFAULT_MANA_TIERS };
+    if (custom && typeof custom === 'object') {
+        for (const t of MANA_COSTS) {
+            const n = Math.round(Number(custom[t]));
+            if (Number.isFinite(n) && n >= 0) out[t] = Math.min(n, 100);
+        }
+    }
+    return out;
+}
+
+/** "medium" / "high" / 12 → a tier, or null ("none", "free", nonsense). */
+export function normalizeManaCost(value, tiers = DEFAULT_MANA_TIERS) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number' || (typeof value === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(value))) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        let best = null;
+        for (const t of MANA_COSTS) if (!best || Math.abs(tiers[t] - n) < Math.abs(tiers[best] - n)) best = t;
+        return best;
+    }
+    const words = String(value).toLowerCase().match(/[a-z]+/g) || [];
+    for (const w of words) if (COST_WORDS[w]) return COST_WORDS[w];
+    return null;
+}
 
 /** Emoji offered in the panel's quick picker. */
 export const ABILITY_EMOJI = [
@@ -50,7 +88,7 @@ export function findAbility(list, name) {
 }
 
 /** Builds an entry, or null without a name. `effects` is a { statId: n } map. */
-export function makeAbility({ icon, name, desc, type, effects = {}, aiCanRemove = true, source = 'user' } = {}) {
+export function makeAbility({ icon, name, desc, type, effects = {}, cost = null, aiCanRemove = true, source = 'user' } = {}) {
     const split = splitLeadingEmoji(name);
     const n = clip(split.name, ABILITY_NAME_MAX);
     if (!n) return null;
@@ -63,6 +101,8 @@ export function makeAbility({ icon, name, desc, type, effects = {}, aiCanRemove 
         desc: clip(desc, ABILITY_DESC_MAX),
         type: kind,
         effects: effects && typeof effects === 'object' && !Array.isArray(effects) ? { ...effects } : {},
+        // Only spells cost Mana.
+        cost: kind === 'spell' ? normalizeManaCost(cost) : null,
         aiCanRemove: aiCanRemove !== false,
         source,
         createdAt: Date.now(),
@@ -88,6 +128,7 @@ export function normalizeAIAbilities(raw) {
             desc: v.desc ?? v.description ?? v.note,
             type: v.type ?? v.kind ?? v.category,
             effects: v.effects ?? v.bonus ?? v.modifiers ?? v.passive,
+            cost: v.cost ?? v.mana ?? v.manaCost ?? v.mp,
             fromList,
         };
         return null;
@@ -136,6 +177,7 @@ export function applyAbilityChange(list, change, resolveEffects = () => ({})) {
         const entry = makeAbility({
             icon: a.icon, name: a.name, desc: a.desc, type: a.type,
             effects: a.effects === undefined || a.effects === null ? {} : resolveEffects(a.effects),
+            cost: a.cost,
             source: 'ai', aiCanRemove: true,
         });
         if (!entry || !itemKey(entry.name)) continue;
@@ -153,10 +195,13 @@ export function abilityModifierSources(list) {
 }
 
 /** "spells: 🔥 Fireball; abilities: 🔒🛡️ Iron skin (CON +2)" */
-export function formatAbilities(list, formatEffect = null, { icons = true } = {}) {
+export function formatAbilities(list, formatEffect = null, { icons = true, manaTiers = null } = {}) {
     const fmt = (arr) => arr.map(a => {
         const eff = formatEffect && a.effects && Object.keys(a.effects).length ? formatEffect(a.effects) : '';
-        return `${a.aiCanRemove === false ? LOCK_MARK : ''}${icons ? `${a.icon} ` : ''}${a.name}${eff ? ` (${eff})` : ''}`;
+        // Mana cost, only when the Mana bar is in use (manaTiers given).
+        const cost = manaTiers && a.type === 'spell' && MANA_COSTS.includes(a.cost) ? `Mana ${manaTiers[a.cost]}` : '';
+        const extra = [cost, eff].filter(Boolean).join('; ');
+        return `${a.aiCanRemove === false ? LOCK_MARK : ''}${icons ? `${a.icon} ` : ''}${a.name}${extra ? ` (${extra})` : ''}`;
     }).join(', ');
     const spells = (list || []).filter(a => a.type === 'spell');
     const skills = (list || []).filter(a => a.type !== 'spell');
@@ -170,16 +215,17 @@ export function formatAbilities(list, formatEffect = null, { icons = true } = {}
  * The prompt section for the characters in the scene.
  * @param {Array<{name: string, isUser: boolean, abilities: object[], needsSeed?: boolean, formatEffect?: Function}>} entries
  */
-export function buildAbilitiesPrompt(entries, { compact = true, standalone = false } = {}) {
+export function buildAbilitiesPrompt(entries, { compact = true, standalone = false, manaTiers = null } = {}) {
     const list = (entries || []).filter(e => e && e.name);
     if (!list.length) return '';
-    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.abilities.length ? formatAbilities(e.abilities, e.formatEffect, { icons: !compact }) : 'nothing listed yet'}`);
+    const lines = list.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${e.abilities.length ? formatAbilities(e.abilities, e.formatEffect, { icons: !compact, manaTiers }) : 'nothing listed yet'}`);
+    const spellCost = manaTiers ? { cost: 'medium' } : {};
     const seed = list.filter(e => e.needsSeed).map(e => e.name);
     const player = list.find(e => e.isUser)?.name;
     const example = JSON.stringify({ abilities: { [list[0].name]: compact
-        ? { add: [{ icon: '🔥', name: 'Fireball', desc: 'Burst of flame', type: 'spell' }], remove: ['Old trick'] }
+        ? { add: [{ icon: '🔥', name: 'Fireball', desc: 'Burst of flame', type: 'spell', ...spellCost }], remove: ['Old trick'] }
         : {
-            add: [{ icon: '🔥', name: 'Fireball', desc: 'Hurls a burst of flame', type: 'spell' }, { icon: '🛡️', name: 'Iron skin', desc: 'Shrugs off blows', type: 'ability', effects: { CON: 1 } }],
+            add: [{ icon: '🔥', name: 'Fireball', desc: 'Hurls a burst of flame', type: 'spell', ...spellCost }, { icon: '🛡️', name: 'Iron skin', desc: 'Shrugs off blows', type: 'ability', effects: { CON: 1 } }],
             remove: ['Forgotten trick'],
         } } });
     const where = standalone ? 'start your reply with ONE JSON code block' : 'add an "abilities" key to the same tracker JSON object';
@@ -193,6 +239,12 @@ export function buildAbilitiesPrompt(entries, { compact = true, standalone = fal
     out += compact
         ? `When someone learns, truly loses, or is shown using a spell or ability not listed${playerNote}, ${where}: ${example} — one emoji, short name, desc under 8 words, "type" spell or ability; "effects" (e.g. {"CON": 1}) only for passive attribute bonuses. Never remove ${LOCK_MARK}. Omit the key when nothing changes.`
         : `ABILITY CHANGES: when a character learns a spell or ability, or the story shows them using one that is not listed yet${playerNote}, or when they truly lose one (forgotten, sealed, taken away), ${where}, like ${example}. Each entry has one emoji, a short name, a description under 8 words and "type": "spell" for magic or "ability" for skills, techniques and talents. Add "effects" only for passive abilities that genuinely raise or lower an attribute (e.g. {"CON": 1}); DES applies them automatically, so never change attributes yourself because of them. Entries marked ${LOCK_MARK} are fixed by the user and must never be removed. Leave the key out entirely when nothing changes.`;
+    if (manaTiers) {
+        const t = manaTiers;
+        out += compact
+            ? `\nSpells cost Mana: give new spells "cost" light (${t.light}), medium (${t.medium}) or heavy (${t.heavy}). Casting one lowers the caster's Mana in "stats" by its cost; nobody can cast with less Mana than that. Spells listed without a cost are free.`
+            : `\nMANA: spells cost Mana. Give every new spell a "cost" — "light" (${t.light} Mana), "medium" (${t.medium}) or "heavy" (${t.heavy}) — fitting how powerful it is. When a character casts a spell, lower their Mana in "stats" by its cost; a character with less Mana than the cost cannot cast it (the attempt fails or they are too drained). Spells listed without a cost are free.`;
+    }
     if (seed.length) {
         out += compact
             ? `\nSTARTING ABILITIES: add the spells and abilities ${seed.join(', ')} already ${seed.length === 1 ? 'knows' : 'know'}, from their description and the scene (a few key ones).`

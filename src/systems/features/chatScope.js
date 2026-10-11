@@ -29,6 +29,8 @@ export const CHAT_ROOTS = [
     'characterAbilities',
     'characterAbilitiesSeeded',
     'characterProgress',
+    'characterAffinity',
+    'characterMoney',
 ];
 
 /** Undo records are tagged with this; they live in the chat, so it is constant. */

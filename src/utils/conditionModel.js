@@ -6,7 +6,9 @@
  * add and remove them from the Stats panel. A condition can carry attribute
  * effects (Wounded leg: DEX −3) that apply while it lasts.
  *
- * Condition shape: { id, icon, name, desc, effects, source: 'ai'|'user', createdAt }
+ * Condition shape: { id, icon, name, desc, effects, source: 'ai'|'user'|'auto', autoId?, createdAt }
+ * 'auto' conditions follow the stat bars (consequenceModel.js): only the
+ * consequence rules add and remove them, never the AI.
  */
 import { cleanIcon, splitLeadingEmoji, itemKey } from './equipmentModel.js';
 
@@ -40,7 +42,7 @@ export function findCondition(list, name) {
 }
 
 /** Builds a condition, or null without a name. `effects` is a { statId: n } map. */
-export function makeCondition({ icon, name, desc, effects = {}, source = 'user' } = {}) {
+export function makeCondition({ icon, name, desc, effects = {}, source = 'user', autoId = null } = {}) {
     const split = splitLeadingEmoji(name);
     const n = clip(split.name, CONDITION_NAME_MAX);
     if (!n) return null;
@@ -52,6 +54,7 @@ export function makeCondition({ icon, name, desc, effects = {}, source = 'user' 
         desc: clip(desc, CONDITION_DESC_MAX),
         effects: effects && typeof effects === 'object' && !Array.isArray(effects) ? { ...effects } : {},
         source,
+        ...(autoId ? { autoId } : {}),
         createdAt: Date.now(),
     };
 }
@@ -108,7 +111,7 @@ export function applyConditionChange(list, change, resolveEffects = () => ({})) 
     const res = { list: next, added: 0, removed: 0 };
     for (const n of change.remove || []) {
         const c = findCondition(next, n);
-        if (!c) continue;
+        if (!c || c.source === 'auto') continue; // automatic ones follow the stats
         next.splice(next.indexOf(c), 1);
         res.removed++;
     }
@@ -138,7 +141,7 @@ export function conditionModifierSources(list) {
 export function formatConditions(list, formatEffect = null, { icons = true } = {}) {
     return (list || []).map(c => {
         const eff = formatEffect && c.effects && Object.keys(c.effects).length ? formatEffect(c.effects) : '';
-        return `${icons ? `${c.icon || DEFAULT_CONDITION_ICON} ` : ''}${c.name}${eff ? ` (${eff})` : ''}`;
+        return `${icons ? `${c.icon || DEFAULT_CONDITION_ICON} ` : ''}${c.name}${eff ? ` (${eff})` : ''}${c.source === 'auto' ? ' [auto]' : ''}`;
     }).join(', ');
 }
 
@@ -159,6 +162,12 @@ export function buildConditionsPrompt(entries, { compact = true, standalone = fa
     if (withAny.length) {
         out += compact ? 'CONDITIONS (temporary, in effect now):\n' : 'CONDITIONS — temporary states in effect right now; let them shape the scene:\n';
         out += withAny.map(e => `- ${e.name}${e.isUser ? ' (player character)' : ''}: ${formatConditions(e.conditions, e.formatEffect, { icons: !compact })}`).join('\n') + '\n';
+    }
+    const hasAuto = withAny.some(e => e.conditions.some(c => c.source === 'auto'));
+    if (hasAuto) {
+        out += compact
+            ? '[auto] = follows a low stat bar; it ends when the bar recovers — never add or remove those yourself.\n'
+            : 'Conditions marked [auto] follow a low stat bar (hunger, exhaustion, wounds…) and end by themselves when the bar recovers; never add or remove them yourself — change the stat instead.\n';
     }
     out += compact
         ? `When a temporary condition (poisoned, wounded, drunk, blessed…) starts or ends, ${where}: ${example} — one emoji, short name, desc under 8 words, "effects" only for real attribute changes (applied while it lasts). Omit the key when nothing changes.`

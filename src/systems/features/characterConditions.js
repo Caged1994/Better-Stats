@@ -117,6 +117,36 @@ export function removeCondition(name, isUser, id) {
     return true;
 }
 
+/**
+ * Makes the character's automatic conditions match `rules` (from
+ * consequenceModel): adds the missing ones, removes the ones no longer due.
+ * A condition of the same name the AI or the user added is left alone.
+ * Returns true when something changed (the caller saves).
+ */
+export function syncAutoConditions(name, isUser, rules) {
+    const key = statKey(name, isUser);
+    const existing = listByKey(key);
+    const wanted = new Set((rules || []).map(r => r.id));
+    if (!existing && !wanted.size) return false;
+    const list = listByKey(key, true);
+    let changedAny = false;
+    for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].source === 'auto' && !wanted.has(list[i].autoId)) { list.splice(i, 1); changedAny = true; }
+    }
+    for (const r of rules || []) {
+        if (list.some(c => c.source === 'auto' && c.autoId === r.id)) continue;
+        if (findCondition(list, r.name)) continue;
+        const c = makeCondition({ icon: r.icon, name: r.name, desc: r.desc, effects: { ...r.effects }, source: 'auto', autoId: r.id });
+        if (c) { list.push(c); changedAny = true; }
+    }
+    return changedAny;
+}
+
+/** Rule ids of the automatic conditions the character has now. */
+export function activeAutoConditions(name, isUser) {
+    return getConditions(name, isUser).filter(c => c.source === 'auto' && c.autoId).map(c => c.autoId);
+}
+
 export function deleteConditionsEverywhere(name, isUser = false) {
     const root = chatRootView('characterConditions');
     if (!root || !name) return;

@@ -52,6 +52,15 @@ let modifierProvider = null;
 export function setModifierProvider(fn) {
     modifierProvider = typeof fn === 'function' ? fn : null;
 }
+// Whatever must follow the stat values (automatic consequences, in
+// characterConsequences.js) registers here, for the same reason.
+let valuesHook = null;
+export function setStatValuesHook(fn) {
+    valuesHook = typeof fn === 'function' ? fn : null;
+}
+function afterValuesChanged() {
+    try { if (valuesHook) valuesHook(); } catch (e) { console.warn('[Dooms Tracker] Stats: values hook failed', e); }
+}
 function modifiersFor(name, isUser) {
     try { return (modifierProvider && modifierProvider(name, isUser)) || {}; } catch (e) { return {}; }
 }
@@ -341,6 +350,7 @@ export function setCurrentStatValue(name, isUser, statId, value, { persist = tru
     const target = existing !== undefined ? existing : key;
     if (!bucket[target] || typeof bucket[target] !== 'object') bucket[target] = {};
     bucket[target][statId] = v;
+    if (!silent) afterValuesChanged();
     if (persist) saveChatScope();
     if (!silent) notifyStatsChanged({ key });
     return v;
@@ -353,6 +363,7 @@ export function resetCurrentStatValues(name, isUser = false) {
         const k = findKey(bucket, statKey(name, isUser));
         if (k !== undefined) delete bucket[k];
     }
+    afterValuesChanged();
     saveChatScope();
     notifyStatsChanged({ key: statKey(name, isUser) });
 }
@@ -566,6 +577,7 @@ export function applyAIStatUpdates(rawStats, messageIndex) {
     const generatedCount = applyGeneratedSheets(targets, all.filter(c => c.generated));
     const changes = all.filter(c => !c.generated);
     if (!changes.length) {
+        if (generatedCount) afterValuesChanged();
         if (generatedCount) {
             saveSettings();
             notifyStatsChanged({ source: 'generated' });
@@ -586,6 +598,7 @@ export function applyAIStatUpdates(rawStats, messageIndex) {
             };
         }
     } catch (e) { /* undo is best-effort */ }
+    afterValuesChanged();
     saveChatScope();
     notifyStatsChanged({ source: 'ai' });
     return changes.length + generatedCount;
@@ -646,7 +659,10 @@ export function revertAIStatsForReplacedMessage(replacedIndex) {
         for (const c of todo) {
             if (typeof c.before === 'number') writeCurrentByKey(c.key, c.statId, c.before);
         }
-        if (todo.length) notifyStatsChanged({ source: 'undo' });
+        if (todo.length) {
+            afterValuesChanged();
+            notifyStatsChanged({ source: 'undo' });
+        }
         saveChatData();
         return todo.length;
     } catch (e) {
