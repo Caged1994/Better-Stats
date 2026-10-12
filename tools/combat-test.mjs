@@ -397,6 +397,10 @@ function winRate(heroes, enemies, n = 200) {
     band('party of 3 vs boss + 2 minions', winRate(['A', 'B', 'C'], [['e', 'boss'], ['m', 'minion'], ['n', 'minion']]), 0.6, 0.97);
 }
 
+// ── a passive skill is not an attack ──
+ok(C.guessProfile('ability', 'Iron skin', '', { effects: { con: 2 } }).type === 'none', 'guess: a skill with only always-on bonuses is passive');
+ok(C.guessProfile('ability', 'Power strike', '', {}).type === 'damage', 'guess: a plain skill is still an attack');
+
 // ── damageReduction (inspect panel) ──
 {
     const t = C.makeCombatant({ id: 't', side: 'enemy', name: 'T', attrs: { con: 20 }, armor: 10 });

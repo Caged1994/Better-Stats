@@ -151,6 +151,24 @@ check('a saved label is used instead of a guess', fbProf?.power === 'heavy' && f
 const again = Cb.buildPartyMember('Mastera', true);
 check('after labelling, nothing is left to label for Mastera', again.unlabelled.length < mast.unlabelled.length, `${again.unlabelled.length} left`);
 check('the labels belong to the chat', chatStore('characterCombat') && Object.keys(chatStore('characterCombat')).length > 0);
+// the scene tracker's characters reach the AI, so the enemies the story introduced are kept
+{
+    const keep = committedTrackerData.characterThoughts;
+    committedTrackerData.characterThoughts = JSON.stringify({ characters: [
+        { name: 'Elena', Appearance: 'red hair' },
+        { name: 'Man in grey', emoji: '🗡️', Appearance: 'scarred man, about 40', Relationship: { status: 'hostile' }, thoughts: 'secret plan' },
+        { name: 'Mastera' },
+    ] });
+    let seen = null;
+    await Cb.generateEncounterSetup(party, { generate: async (o) => { seen = o.prompt; return reply; } });
+    const sys = seen[0].content, usr = seen[1].content;
+    check('the tracker characters are shown to the AI with their details', sys.includes('<characters_in_scene>') && sys.includes('Man in grey') && sys.includes('scarred man'));
+    check('the fighters are not listed as scene characters', !/- Elena/.test(sys) && !/- Mastera/.test(sys));
+    check('inner thoughts are left out', !sys.includes('secret plan'));
+    check('the prompt says to keep what the story says and to label the unnamed', /same sex/.test(usr) && /Bandit 1/.test(usr));
+    committedTrackerData.characterThoughts = keep;
+}
+
 const badReply = async () => 'sorry, no json here';
 let threw = false;
 try { await Cb.generateEncounterSetup(party, { generate: badReply }); } catch (e) { threw = true; }
@@ -283,6 +301,26 @@ Cb.setCombatNarration(true);
     check('item combat: values are clamped 0–15', clamped.atk === 15 && clamped.def === 0);
     Cb.setItemGear('Mastera', true, 'Long sword', null, null);
     check('item combat: clearing goes back to automatic', !Cb.getItemCombat('Mastera', true, sword).stored);
+}
+
+// ── Hand-set effects of spells, skills and items ──
+{
+    const fb = () => Cb.buildPartyMember('Mastera', true).combatant.actions.find(a => a.label === 'Fireball');
+    const spell = Ab.getAbilities('Mastera', true).find(a => a.name === 'Fireball');
+    check('action profile: a fresh read gives a profile', !!Cb.getActionProfile('Mastera', true, 'spell', spell).profile);
+    Cb.setActionProfile('Mastera', true, 'spell', 'Fireball', { type: 'damage', power: 'heavy', stat: 'wis', target: 'enemies', status: 'poison' });
+    const a = fb();
+    check('action profile: the spell uses the hand-set effect', a && a.profile.power === 'heavy' && a.profile.stat === 'wis' && a.profile.target === 'enemies' && a.profile.status === 'poison', JSON.stringify(a?.profile));
+    check('action profile: stored and described', Cb.getActionProfile('Mastera', true, 'spell', spell).stored && /Damage · Heavy · WIS/.test(Cb.describeProfile(a.profile)), Cb.describeProfile(a?.profile));
+    Cb.setActionProfile('Mastera', true, 'spell', 'Fireball', { type: 'none' });
+    check('action profile: "passive" takes it out of the fight', !fb());
+    Cb.setActionProfile('Mastera', true, 'spell', 'Fireball', null);
+    check('action profile: cleared goes back to automatic', !Cb.getActionProfile('Mastera', true, 'spell', spell).stored && !!fb());
+    Cb.setActionProfile('Mastera', true, 'item', 'Old key', { type: 'heal', power: 'medium', stat: 'none', target: 'ally' });
+    const key = Cb.buildPartyMember('Mastera', true).combatant.actions.find(x => x.label === 'Old key');
+    check('action profile: a plain item can be made usable', key && key.profile.type === 'heal');
+    Cb.setActionProfile('Mastera', true, 'item', 'Old key', null);
+    check('action profile: a status without a status is refused', Cb.setActionProfile('Mastera', true, 'spell', 'Fireball', { type: 'status' }) === false);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall combat checks passed');

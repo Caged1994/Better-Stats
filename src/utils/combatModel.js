@@ -198,6 +198,8 @@ export function guessProfile(kind, name, desc = '', { cost = null, effects = nul
         if (atk || def) return normalizeProfile({ type: 'gear', atk: Math.min(atk * 2, 15), def: Math.min(def * 2, 15) });
         return normalizeProfile({ type: 'none' });
     }
+    // A skill that only gives always-on bonuses ("CON +2") is passive, not an attack.
+    if (kind === 'ability' && effects && Object.keys(effects).length) return normalizeProfile({ type: 'none' });
     if (kind === 'spell') return normalizeProfile({ type: 'damage', stat: 'int', target: 'enemy', power: cost && POWERS.includes(cost) ? cost : 'medium' });
     return normalizeProfile({ type: 'damage', stat: 'str', target: 'enemy', power: 'medium' });
 }

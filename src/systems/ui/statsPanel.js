@@ -49,7 +49,8 @@ import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
 import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
-import { isCombatEnabled, getLiveEncounter, getItemCombat, setItemGear } from '../features/combat.js';
+import { isCombatEnabled, getLiveEncounter, getActionProfile, setActionProfile, describeProfile } from '../features/combat.js';
+import { STATUSES as COMBAT_STATUSES, STATUS_IDS as COMBAT_STATUS_IDS, ATTRIBUTE_IDS as COMBAT_ATTRS } from '../../utils/combatModel.js';
 import { affinityTier } from '../../utils/affinityModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
@@ -64,7 +65,7 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
 // editId: the entry being edited (null = adding a new one).
-const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, gearEditable: true, atkHint: '', defHint: '' };
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbAuto: null };
 const itemForm = { ...FORM_DEFAULTS };
 
 // Section tabs inside the panel. The last one used is remembered.
@@ -542,13 +543,16 @@ function effectText(effects) {
     return effects && Object.keys(effects).length ? describeEffects(selected.name, selected.isUser, effects) : '';
 }
 
-/** ⚔ / 🛡 values a weapon or armour counts for in combat (shown only when Combat is on). */
-function gearChip(item) {
+/** What an item or a spell counts for in a fight, as a short chip (only when Combat is on). */
+function combatChip(kind, entry, idle = false) {
     if (!selected || !isCombatEnabled()) return '';
-    const c = getItemCombat(selected.name, selected.isUser, item);
-    if (!c.atk && !c.def) return '';
-    const txt = [c.atk ? `⚔${c.atk}` : '', c.def ? `🛡${c.def}` : ''].filter(Boolean).join(' ');
-    return `<span class="dsp-item-eff dsp-item-gear${item.equipped ? '' : ' is-idle'}" title="Combat: attack bonus / defence${item.equipped ? '' : ' (when equipped)'}">${txt}</span>`;
+    const { profile } = getActionProfile(selected.name, selected.isUser, kind, entry);
+    if (!profile || (kind === 'item' && profile.type === 'none')) return '';
+    const txt = profile.type === 'gear'
+        ? (profile.atk || profile.def ? [profile.atk ? `⚔${profile.atk}` : '', profile.def ? `🛡${profile.def}` : ''].filter(Boolean).join(' ') : '')
+        : describeProfile(profile);
+    if (!txt) return '';
+    return `<span class="dsp-item-eff dsp-item-gear${idle ? ' is-idle' : ''}" title="In a fight: ${escapeHtml(describeProfile(profile))}${idle ? ' (when equipped)' : ''}">${escapeHtml(txt)}</span>`;
 }
 
 function itemHtml(raw) {
@@ -562,7 +566,7 @@ function itemHtml(raw) {
             <span class="dsp-item-main dsp-edit-open" title="Click to edit">
                 <span class="dsp-item-name">${escapeHtml(item.name)}</span>
                 ${eff ? `<span class="dsp-item-eff${item.equipped ? '' : ' is-idle'}">${escapeHtml(eff)}</span>` : ''}
-                ${gearChip(item)}
+                ${combatChip('item', item, !item.equipped)}
             </span>
             <span class="dsp-qty" title="Quantity">
                 <button type="button" class="dsp-qty-btn" data-qty="-1" title="One less">−</button>
@@ -578,6 +582,81 @@ function itemHtml(raw) {
                 <i class="fa-solid ${locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
             <button type="button" class="dsp-item-remove" title="Remove ${escapeHtml(item.name)}"><i class="fa-solid fa-xmark"></i></button>
         </div>`;
+}
+
+const CB_TYPES = [
+    ['damage', 'Damage'], ['heal', 'Heals'], ['status', 'Status effect'], ['mana', 'Restores Mana'],
+    ['cure', 'Cures bad statuses'], ['revive', 'Revives a fallen ally'],
+];
+const CB_TARGETS = {
+    damage: [['enemy', 'One enemy'], ['enemies', 'All enemies']],
+    heal: [['ally', 'One ally'], ['allies', 'All allies'], ['self', 'Self']],
+    mana: [['ally', 'One ally'], ['allies', 'All allies'], ['self', 'Self']],
+    cure: [['ally', 'One ally'], ['allies', 'All allies'], ['self', 'Self']],
+    status: [['self', 'Self'], ['ally', 'One ally'], ['allies', 'All allies'], ['enemy', 'One enemy'], ['enemies', 'All enemies']],
+};
+
+function cbSelect(field, options, value) {
+    return `<select class="dsp-cb" data-cb="${field}">${options.map(([v, l]) => `<option value="${v}"${v === value ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>`;
+}
+
+/** The "Combat" part of an item / spell / skill form: what it does in a fight. */
+function combatBlockHtml(kind) {
+    if ((kind !== 'item' && kind !== 'ability') || !isCombatEnabled()) return '';
+    const f = itemForm;
+    const types = [['', `Automatic${f.cbAuto ? ` — ${describeProfile(f.cbAuto)}` : ''}`]];
+    if (kind === 'item') types.push(['gear', 'Weapon / armour']);
+    types.push(...CB_TYPES, ['none', kind === 'item' ? 'Nothing in a fight' : 'Passive — not used in a fight']);
+    const rows = [`<label>Effect ${cbSelect('cbType', types, f.cbType)}</label>`];
+    const t = f.cbType;
+    const power = [['light', 'Light'], ['medium', 'Medium'], ['heavy', 'Heavy']];
+    const stats = [...COMBAT_ATTRS.map(a => [a, a.toUpperCase()]), ['none', 'Fixed']];
+    if (['damage', 'heal', 'mana', 'revive'].includes(t)) rows.push(`<label>Power ${cbSelect('cbPower', power, f.cbPower)}</label>`);
+    if (t === 'damage' || t === 'heal') rows.push(`<label>Scales with ${cbSelect('cbStat', stats, f.cbStat || 'str')}</label>`);
+    if (CB_TARGETS[t]) rows.push(`<label>Target ${cbSelect('cbTarget', CB_TARGETS[t], f.cbTarget)}</label>`);
+    if (t === 'damage') rows.push(`<label>May cause ${cbSelect('cbStatus', [['', 'Nothing'], ...COMBAT_STATUS_IDS.map(id => [id, `${COMBAT_STATUSES[id].icon} ${COMBAT_STATUSES[id].name}`])], f.cbStatus)}</label>`);
+    if (t === 'status') rows.push(`<label>Status ${cbSelect('cbStatus', COMBAT_STATUS_IDS.map(id => [id, `${COMBAT_STATUSES[id].icon} ${COMBAT_STATUSES[id].name}`]), f.cbStatus || 'shield')}</label>`);
+    if (t === 'gear') {
+        rows.push(`<label>Attack <input type="number" class="dsp-item-in-atk" data-field="atk" data-gear="1" value="${escapeHtml(f.atk)}" placeholder="0" min="0" max="15" step="1"></label>`);
+        rows.push(`<label>Defence <input type="number" class="dsp-item-in-def" data-field="def" data-gear="1" value="${escapeHtml(f.def)}" placeholder="0" min="0" max="15" step="1"></label>`);
+    }
+    const hint = !t ? 'Left on Automatic, the AI labels it (or its name decides) the first time a fight starts.'
+        : t === 'gear' ? 'Counts while equipped: Attack adds to physical attacks, Defence to armour.'
+            : t === 'none' ? 'It stays out of the fight.' : '';
+    return `<div class="dsp-item-form-row dsp-gear-row">
+        <span class="dsp-gear-label">⚔ In combat</span>${rows.join('')}
+        ${hint ? `<span class="dsp-gear-note">${escapeHtml(hint)}</span>` : ''}
+    </div>`;
+}
+
+/** Sensible starting values when the effect type is chosen (the automatic ones if they match). */
+function applyCombatDefaults() {
+    const f = itemForm;
+    const t = f.cbType;
+    if (!t) return;
+    const auto = f.cbAuto && f.cbAuto.type === t ? f.cbAuto : null;
+    const spell = f.kind === 'ability' && f.type === 'spell';
+    f.cbPower = auto?.power || 'medium';
+    f.cbStat = auto && auto.stat !== 'none' ? auto.stat : (t === 'damage' ? (spell ? 'int' : 'str') : t === 'heal' ? (spell ? 'wis' : 'str') : 'none');
+    f.cbStatus = auto?.status || (t === 'status' ? 'shield' : '');
+    f.cbTarget = auto?.target || (t === 'damage' ? 'enemy' : t === 'status' ? (COMBAT_STATUSES[f.cbStatus]?.bad ? 'enemy' : 'ally') : 'ally');
+    f.atk = String(auto?.atk ?? 0);
+    f.def = String(auto?.def ?? 0);
+}
+
+/** Fills the form's combat fields from what the fight would use for this entry. */
+function loadCombatFields(kind, entry) {
+    const f = itemForm;
+    const { stored, profile } = getActionProfile(selected.name, selected.isUser, kind, entry);
+    f.cbAuto = stored ? null : profile;
+    if (stored) {
+        Object.assign(f, {
+            cbType: profile.type, cbPower: profile.power, cbStat: profile.stat, cbTarget: profile.target,
+            cbStatus: profile.status || '', atk: String(profile.atk ?? 0), def: String(profile.def ?? 0),
+        });
+    } else {
+        f.cbType = '';
+    }
 }
 
 function formHtml(kind) {
@@ -612,11 +691,7 @@ function formHtml(kind) {
             </div>
             <input type="text" class="dsp-item-in-desc" data-field="desc" value="${escapeHtml(f.desc)}" placeholder="Very short description (shown on hover)" maxlength="120" aria-label="Description">
             <input type="text" class="dsp-item-in-eff" data-field="effects" value="${escapeHtml(f.effects)}" placeholder="${effPh}" maxlength="80" aria-label="Effects">
-            ${isItem && isCombatEnabled() ? (f.gearEditable ? `<div class="dsp-item-form-row dsp-gear-row" title="How much it counts for in combat while equipped. Leave both empty to let the AI (or the item's name) decide.">
-                <span class="dsp-gear-label">⚔ Combat</span>
-                <label>Attack <input type="number" class="dsp-item-in-atk" data-field="atk" data-gear="1" value="${escapeHtml(f.atk)}" placeholder="${escapeHtml(f.atkHint || 'auto')}" min="0" max="15" step="1"></label>
-                <label>Defence <input type="number" class="dsp-item-in-def" data-field="def" data-gear="1" value="${escapeHtml(f.def)}" placeholder="${escapeHtml(f.defHint || 'auto')}" min="0" max="15" step="1"></label>
-            </div>` : '<div class="dsp-gear-note">In a fight this item is used up (potion, bomb…), so it has no attack or defence.</div>') : ''}
+            ${combatBlockHtml(kind)}
             <div class="dsp-item-form-row">
                 ${isItem ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-equipped" ${f.equipped ? 'checked' : ''}> Equipped</label>` : ''}
                 ${isItem || isAbility ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> AI can remove</label>` : ''}
@@ -645,14 +720,7 @@ function openEdit(kind, id) {
         aiCanRemove: e.aiCanRemove !== false, type: e.type === 'spell' ? 'spell' : 'ability',
         cost: e.cost || '',
     });
-    if (kind === 'item') {
-        const c = getItemCombat(selected.name, selected.isUser, e);
-        Object.assign(itemForm, {
-            gearEditable: c.editable,
-            atk: c.stored ? String(c.atk) : '', def: c.stored ? String(c.def) : '',
-            atkHint: c.stored ? '' : `auto ${c.atk}`, defHint: c.stored ? '' : `auto ${c.def}`,
-        });
-    }
+    if (kind === 'item' || kind === 'ability') loadCombatFields(kind === 'item' ? 'item' : (e.type === 'spell' ? 'spell' : 'ability'), e);
     renderAll();
 }
 
@@ -722,6 +790,7 @@ function abilityRowHtml(a) {
             <span class="dsp-item-main dsp-edit-open" title="Click to edit">
                 <span class="dsp-item-name">${escapeHtml(a.name)}</span>
                 ${eff ? `<span class="dsp-item-eff">${escapeHtml(eff)}</span>` : ''}
+                ${combatChip(a.type === 'spell' ? 'spell' : 'ability', a)}
             </span>
             ${cost !== null ? `<span class="dsp-mana-cost" title="${cost} Mana (${escapeHtml(a.cost)})">💧${cost}</span>` : ''}
             <button type="button" class="dsp-item-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
@@ -779,10 +848,13 @@ function submitItemForm() {
         });
     }
     if (res && res.error) { f.error = res.error; renderAll(); return; }
-    if (f.kind === 'item' && f.gearTouched && f.gearEditable && isCombatEnabled()) {
-        const num = (v) => (String(v).trim() === '' ? null : Math.max(0, Math.min(15, Math.round(Number(v)) || 0)));
-        const a = num(f.atk), d = num(f.def);
-        setItemGear(selected.name, selected.isUser, f.name.trim(), a === null && d === null ? null : a, a === null && d === null ? null : d);
+    if ((f.kind === 'item' || f.kind === 'ability') && f.gearTouched && isCombatEnabled()) {
+        const num = (v) => Math.max(0, Math.min(15, Math.round(Number(v)) || 0));
+        const kind = f.kind === 'item' ? 'item' : (f.type === 'spell' ? 'spell' : 'ability');
+        setActionProfile(selected.name, selected.isUser, kind, f.name.trim(), f.cbType ? {
+            type: f.cbType, power: f.cbPower || 'medium', stat: f.cbStat || 'none', target: f.cbTarget,
+            status: f.cbStatus || undefined, atk: num(f.atk), def: num(f.def),
+        } : null);
     }
     resetForm();
     renderAll();
@@ -1134,6 +1206,15 @@ function bindRootListeners(root) {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; renderAll(); }
+        const cb = e.target.getAttribute && e.target.getAttribute('data-cb');
+        if (cb) {
+            itemForm[cb] = e.target.value;
+            itemForm.gearTouched = true;
+            itemForm.error = '';
+            if (cb === 'cbType') applyCombatDefaults();
+            if (cb === 'cbStatus' && itemForm.cbType === 'status') itemForm.cbTarget = COMBAT_STATUSES[e.target.value]?.bad ? 'enemy' : 'ally';
+            renderAll();
+        }
         if (e.target.classList && e.target.classList.contains('dsp-item-in-cost')) { itemForm.cost = e.target.value; }
         if (e.target.classList && e.target.classList.contains('dsp-party-toggle') && selected && !selected.isUser) setPartyMember(selected.name, e.target.checked);
     });

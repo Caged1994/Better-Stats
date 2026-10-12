@@ -21,7 +21,7 @@
 import { chat } from '../../../../../../../script.js';
 import { getContext } from '../../../../../../extensions.js';
 import { executeSlashCommandsOnChatInput } from '../../../../../../../scripts/slash-commands.js';
-import { extensionSettings } from '../../core/state.js';
+import { extensionSettings, committedTrackerData, lastGeneratedData } from '../../core/state.js';
 import { saveSettings } from '../../core/persistence.js';
 import { safeGenerateRaw } from '../../utils/responseExtractor.js';
 import { repairJSON } from '../../utils/jsonRepair.js';
@@ -127,6 +127,39 @@ export function setItemGear(name, isUser, itemName, atk, def) {
     return !!setStoredProfile(owner, 'item', itemName, { type: 'gear', atk: atk || 0, def: def || 0 });
 }
 
+/**
+ * What a spell, skill or item does in a fight, for the edit forms.
+ * `profile` is what the fight would use (saved or guessed); `stored` says it
+ * was fixed by you or labelled by the AI rather than guessed.
+ * @param {'spell'|'ability'|'item'} kind
+ */
+export function getActionProfile(name, isUser, kind, entry) {
+    const owner = statKey(name, isUser);
+    const stored = getStoredProfile(owner, kind, entry.name);
+    const profile = stored || M.guessProfile(kind, entry.name, entry.desc, { cost: entry.cost, effects: entry.effects });
+    return { stored: !!stored, profile };
+}
+
+/** Fixes what an action does by hand; a null profile goes back to automatic. */
+export function setActionProfile(name, isUser, kind, entryName, profile) {
+    const owner = statKey(name, isUser);
+    if (!profile) return clearStoredProfile(owner, kind, entryName);
+    return !!setStoredProfile(owner, kind, entryName, profile);
+}
+
+/** A short plain description, e.g. "Damage · Medium · INT · may cause burning". */
+export function describeProfile(p) {
+    if (!p) return '';
+    const type = { damage: 'Damage', heal: 'Heals', status: 'Status', mana: 'Restores Mana', cure: 'Cures', revive: 'Revives', gear: 'Weapon / armour', none: 'Not used in a fight' }[p.type] || p.type;
+    const bits = [type];
+    if (p.type === 'gear') return `${type} · ⚔${p.atk || 0} 🛡${p.def || 0}`;
+    if (p.type === 'none') return type;
+    if (['damage', 'heal', 'mana', 'revive'].includes(p.type)) bits.push(p.power[0].toUpperCase() + p.power.slice(1));
+    if (['damage', 'heal'].includes(p.type) && p.stat && p.stat !== 'none') bits.push(p.stat.toUpperCase());
+    if (p.status) bits.push(`${p.type === 'status' ? '' : 'may cause '}${M.STATUSES[p.status]?.name.toLowerCase() || p.status}`.trim());
+    return bits.join(' · ');
+}
+
 // ─── Fighters ───────────────────────────────────────────────────────────────
 
 function combatId(prefix, name) {
@@ -137,7 +170,7 @@ function combatId(prefix, name) {
 function abilityAction(owner, a, tiers) {
     const kind = a.type === 'spell' ? 'spell' : 'ability';
     const stored = getStoredProfile(owner, kind, a.name);
-    const profile = stored || M.guessProfile(kind, a.name, a.desc, { cost: a.cost });
+    const profile = stored || M.guessProfile(kind, a.name, a.desc, { cost: a.cost, effects: a.effects });
     if (!profile || profile.type === 'gear' || profile.type === 'none') return { skip: true, labelled: !!stored };
     const power = profile.power;
     // Spells cost Mana (their own tier, else the strength of the effect); with
@@ -245,6 +278,47 @@ function recentMessages(depth) {
     return out;
 }
 
+const SCENE_SKIP = new Set(['name', 'emoji', 'thoughts', 'locked', 'lock', 'id']);
+
+function flattenValue(v, depth = 0) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v.trim();
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.map(x => flattenValue(x, depth + 1)).filter(Boolean).join(', ');
+    if (typeof v === 'object' && depth < 2) {
+        return Object.entries(v).filter(([k]) => !SCENE_SKIP.has(k.toLowerCase()))
+            .map(([k, x]) => { const t = flattenValue(x, depth + 1); return t ? `${k} ${t}` : ''; }).filter(Boolean).join('; ');
+    }
+    return '';
+}
+
+/**
+ * The characters the scene tracker (the "present characters" bar) lists,
+ * except the party, with what it says about each. Enemies the story has
+ * already introduced are usually here.
+ * @param {string[]} exclude - names to leave out (the fighters)
+ * @returns {Array<{name: string, text: string}>}
+ */
+export function presentCharacters(exclude = []) {
+    const raw = lastGeneratedData?.characterThoughts || committedTrackerData?.characterThoughts;
+    if (!raw) return [];
+    let list;
+    try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        list = Array.isArray(parsed) ? parsed : (parsed?.characters || []);
+    } catch (e) { return []; }
+    if (!Array.isArray(list)) return [];
+    const skip = new Set(exclude.map(n => String(n).toLowerCase()));
+    const out = [];
+    for (const c of list) {
+        const name = typeof c?.name === 'string' ? c.name.trim() : '';
+        if (!name || skip.has(name.toLowerCase())) continue;
+        out.push({ name, text: flattenValue(Object.fromEntries(Object.entries(c).filter(([k]) => !SCENE_SKIP.has(k.toLowerCase())))).replace(/\s+/g, ' ') });
+        if (out.length >= 12) break;
+    }
+    return out;
+}
+
 function cardInfo() {
     try {
         const ctx = getContext();
@@ -331,6 +405,7 @@ export async function generateEncounterSetup(party, { situation = '', generate =
         cardName: card.name,
         cardDescription: card.description,
         messages: recentMessages(depth),
+        present: presentCharacters([getPersonaName(), ...members.map(m => m.combatant.name)].filter(Boolean)),
         currency: currency ? currency.name : '',
         toLabel: toLabel.slice(0, 40),
     });
