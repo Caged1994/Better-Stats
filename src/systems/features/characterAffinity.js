@@ -81,6 +81,23 @@ export function setAffinity(name, value) {
     return v;
 }
 
+/**
+ * Moves an NPC's affinity by `delta` (a fight, an event outside the AI's
+ * replies). Does nothing for an NPC with no value yet — nothing is invented.
+ * Returns the new value, or null.
+ */
+export function adjustAffinity(name, delta, reason = '') {
+    if (!isAffinityEnabled() || !name) return null;
+    const before = getAffinity(name);
+    if (before === null) return null;
+    const v = clampAffinity(before + Number(delta || 0));
+    if (v === null || v === before) return before;
+    write(name, v, reason);
+    saveChatScope();
+    notifyStatsChanged({ source: 'affinity', name });
+    return v;
+}
+
 export function deleteAffinity(name) {
     const s = store();
     const k = findKey(s, name);

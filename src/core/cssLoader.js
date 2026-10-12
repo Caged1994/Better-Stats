@@ -8,6 +8,7 @@
  *   - 'weather'       — weather overlay/ambience styles (only when enabled)
  *   - 'whats-new'     — release-notes screen (desktop, once per release)
  *   - 'stats-panel'   — Character Stats panel (first time it opens)
+ *   - 'combat'        — turn-based combat window (first fight)
  *
  * ensureCss() resolves when the sheet has loaded, so callers can await it
  * before inserting matching DOM (no flash of unstyled content).

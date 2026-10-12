@@ -49,6 +49,7 @@ import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
 import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
+import { isCombatEnabled, getLiveEncounter } from '../features/combat.js';
 import { affinityTier } from '../../utils/affinityModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
@@ -295,6 +296,7 @@ function buildHtml({ popout }) {
             <span class="dsp-title"><i class="fa-solid fa-chart-simple"></i> Stats</span>
             ${campaign ? `<span class="dsp-campaign" title="Active campaign — portraits and descriptions follow it; values belong to this chat">${escapeHtml(campaign)}</span>` : ''}
             <span class="dsp-spacer"></span>
+            ${isCombatEnabled() ? `<button type="button" class="dsp-icon-btn${getLiveEncounter() ? ' is-on' : ''}" data-action="combat" title="${getLiveEncounter() ? 'A fight is in progress — resume it' : 'Start a turn-based fight'}"><i class="fa-solid fa-khanda"></i></button>` : ''}
             <button type="button" class="dsp-icon-btn${isRpgModeActive() ? ' is-on' : ''}" data-action="${isRpgModeActive() ? 'rpg-off' : 'rpg-on'}" title="RPG mode is ${isRpgModeActive() ? 'on — click to turn it off for this card' : 'off — click to turn it on'}"><i class="fa-solid fa-power-off"></i></button>
             ${popout
                 ? '<button type="button" class="dsp-icon-btn" data-action="dock" title="Back into SillyTavern"><i class="fa-solid fa-down-left-and-up-right-to-center"></i></button>'
@@ -1067,6 +1069,7 @@ function bindRootListeners(root) {
         if (action === 'item-cancel') { resetForm(); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
         if (action === 'xp-add') { submitXpForm(); return; }
+        if (action === 'combat') { import('./combatModal.js').then(m => m.openCombat()).catch(e => console.error('[Dooms Tracker] Combat window failed to open', e)); return; }
         if (action === 'rpg-on') { toggleRpgModeHere(true); return; }
         if (action === 'rpg-off') {
             const ok = (root.ownerDocument.defaultView || window).confirm('Turn RPG mode off for this card?\n\nStats, levels, equipment and the rest stop being sent to the AI and updated in its chats. Nothing is deleted; turn it back on any time.');

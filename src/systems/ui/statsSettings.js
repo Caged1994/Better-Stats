@@ -39,6 +39,7 @@ import { getManaTiers, setManaTier } from '../features/characterAbilities.js';
 import { setMoneyEnabled, getCurrency, setCurrency } from '../features/characterMoney.js';
 import { setAffinityEnabled } from '../features/characterAffinity.js';
 import { setConsequencesEnabled } from '../features/characterConsequences.js';
+import { setCombatEnabled, setCombatNarration } from '../features/combat.js';
 
 function sixDigit(color) {
     const c = String(color || '');
@@ -115,6 +116,8 @@ export function initStatsSettings() {
     flag('rpg-money-enabled', 'characterMoneyEnabled');
     flag('rpg-affinity-enabled', 'characterAffinityEnabled');
     flag('rpg-consequences-enabled', 'autoConsequences');
+    flag('rpg-combat-enabled', 'combatEnabled');
+    flag('rpg-combat-narration', 'combatNarration');
     const memRecent = document.getElementById('rpg-memories-recent');
     if (memRecent) memRecent.value = String(getRecentLimit());
     renderXpSettings();
@@ -141,6 +144,8 @@ export function initStatsSettings() {
         else if (el.id === 'rpg-money-enabled') setMoneyEnabled(el.checked);
         else if (el.id === 'rpg-affinity-enabled') setAffinityEnabled(el.checked);
         else if (el.id === 'rpg-consequences-enabled') setConsequencesEnabled(el.checked);
+        else if (el.id === 'rpg-combat-enabled') setCombatEnabled(el.checked);
+        else if (el.id === 'rpg-combat-narration') setCombatNarration(el.checked);
         else if (el.id && el.id.startsWith('rpg-mana-')) { setManaTier(el.id.slice(9), el.value); renderXpSettings(); }
         else if (el.id === 'rpg-currency-name' || el.id === 'rpg-currency-symbol') {
             const name = document.getElementById('rpg-currency-name')?.value || '';
