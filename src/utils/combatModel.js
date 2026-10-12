@@ -422,6 +422,12 @@ function defenceOf(defender, profile) {
     return attrValue(defender, 'con') * TUNING.defPerCon + defender.armor * (physical ? 1 : TUNING.magicArmorShare);
 }
 
+/** How much of the damage a defender shrugs off, as 0–1: { physical, magic }. For the inspect panel. */
+export function damageReduction(defender) {
+    const f = (profile) => { const d = defenceOf(defender, profile); return d / (d + TUNING.defK); };
+    return { physical: f(null), magic: f({ stat: 'int' }) };
+}
+
 export function damageAgainst(attacker, action, defender, { roll = 1, crit = false, aoe = false } = {}) {
     let d = rawDamage(attacker, action, roll, aoe) * (crit ? TUNING.critMult : 1);
     const def = defenceOf(defender, action.profile);

@@ -44,7 +44,7 @@ function freshSetup() {
 }
 
 function freshUi() {
-    return { menu: 'main', pending: null, busy: false, report: null, narration: '', narrationState: 'idle', narrationError: '' };
+    return { menu: 'main', pending: null, inspect: null, busy: false, report: null, narration: '', narrationState: 'idle', narrationError: '' };
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -223,11 +223,12 @@ function cardHtml(c, actor) {
     if (c.down) cls.push('is-down');
     if (actor && actor.id === c.id) cls.push('is-active');
     if (targetable) cls.push('is-targetable');
+    if (ui.inspect === c.id) cls.push('is-inspected');
     const tier = c.tier ? `<span class="dcb-tier is-${c.tier}">${M.TUNING.tiers[c.tier]?.label || c.tier}</span>` : '';
     return `<div class="${cls.join(' ')}" ${targetable ? `data-action="target" data-id="${escapeHtml(c.id)}" role="button" tabindex="0"` : ''} title="${escapeHtml(c.description || c.name)}">
         ${avatarHtml(c)}
         <div class="dcb-card-main">
-            <div class="dcb-card-name"><span>${escapeHtml(c.name)}</span></div>
+            <div class="dcb-card-name"><span>${escapeHtml(c.name)}</span><button type="button" class="dcb-info" data-action="inspect" data-id="${escapeHtml(c.id)}" title="Stats and abilities" aria-label="Inspect ${escapeHtml(c.name)}"><i class="fa-solid fa-circle-info"></i></button></div>
             <div class="dcb-card-meta">${tier}<span class="dcb-lv">Lv ${c.level}</span></div>
             ${barHtml('is-hp', c.hp, c.maxHp, c.down ? 'Down' : `${c.hp} / ${c.maxHp}`)}
             ${c.mana !== null && c.side === 'party' ? barHtml('is-mana', c.mana, 100, `Mana ${c.mana}`) : ''}
@@ -301,6 +302,64 @@ function logHtml() {
     return `<ul class="dcb-log" aria-live="polite">${lines.join('')}</ul>`;
 }
 
+const ATTR_LABELS = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
+const POWER_LABELS = { light: 'Light', medium: 'Medium', heavy: 'Heavy' };
+const TARGET_LABELS = { enemy: 'one enemy', enemies: 'all enemies', ally: 'one ally', allies: 'all allies', self: 'self' };
+
+function actionDetail(c, a, foe) {
+    const p = a.profile || {};
+    const bits = [];
+    bits.push(`<span class="dcb-chip">${escapeHtml(POWER_LABELS[p.power] || 'Medium')}</span>`);
+    if (p.stat && p.stat !== 'none') bits.push(`<span class="dcb-chip">${ATTR_LABELS[p.stat] || p.stat.toUpperCase()}</span>`);
+    let what = '';
+    if (p.type === 'damage') {
+        const est = foe ? M.estimateAction(c, a, foe) : null;
+        what = est ? `Damage ${est.min}–${est.max} to ${escapeHtml(foe.name)}, ${est.hit}% to hit` : 'Damage';
+    } else if (p.type === 'heal') what = 'Heals';
+    else if (p.type === 'status') what = M.STATUSES[p.status]?.name || 'Status';
+    else if (p.type === 'mana') what = 'Restores Mana';
+    else if (p.type === 'cure') what = 'Removes harmful statuses';
+    else if (p.type === 'revive') what = 'Raises a fallen ally';
+    if (p.status && p.type === 'damage') what += `, may cause ${(M.STATUSES[p.status]?.name || p.status).toLowerCase()} ${M.STATUSES[p.status]?.icon || ''}`;
+    const extra = [];
+    if (TARGET_LABELS[p.target]) extra.push(`targets ${TARGET_LABELS[p.target]}`);
+    if (a.manaCost > 0 && c.mana !== null) extra.push(`💧${a.manaCost} Mana`);
+    if (a.cooldown > 0 && !(a.manaCost > 0 && c.mana !== null)) extra.push(`cooldown ${a.cooldown} turn${a.cooldown === 1 ? '' : 's'}`);
+    if (a.kind === 'item') extra.push(`×${a.qty}`);
+    return `<li><span class="dcb-act-icon">${escapeHtml(a.icon || '✨')}</span>
+        <div><div class="dcb-ins-name">${escapeHtml(a.label)} ${bits.join('')}</div>
+        <small>${[what, ...extra].filter(Boolean).join(' · ')}</small></div></li>`;
+}
+
+function inspectHtml() {
+    const c = ui.inspect && fight.combatants.find(x => x.id === ui.inspect);
+    if (!c) return '';
+    const actor = M.currentActor(fight);
+    const foeSide = c.side === 'enemy' ? 'party' : 'enemy';
+    const foe = (actor && actor.side === foeSide && !actor.down ? actor : null) || M.alive(fight, foeSide)[0] || null;
+    const red = M.damageReduction(c);
+    const attrs = M.ATTRIBUTE_IDS.map(id => `<div class="dcb-ins-attr"><b>${ATTR_LABELS[id]}</b><span>${M.attrValue(c, id)}</span></div>`).join('');
+    const tier = c.tier ? `<span class="dcb-tier is-${c.tier}">${M.TUNING.tiers[c.tier]?.label || c.tier}</span>` : '';
+    const stats = [
+        `❤️ ${c.hp} / ${c.maxHp}`,
+        c.mana !== null ? `💧 ${c.mana}` : '',
+        `🛡️ Armor ${c.armor} — blocks ${Math.round(red.physical * 100)}% of physical, ${Math.round(red.magic * 100)}% of magic`,
+        c.atkBonus > 0 ? `⚔️ Weapon bonus +${c.atkBonus}` : '',
+    ].filter(Boolean).map(t => `<li>${t}</li>`).join('');
+    const list = c.actions.map(a => actionDetail(c, a, foe)).join('') || '<li class="dcb-empty">No actions.</li>';
+    const sts = (c.statuses || []).map(s => { const d = M.STATUSES[s.id]; return d ? `<span class="dcb-status${d.bad ? ' is-bad' : ''}">${d.icon} ${escapeHtml(d.name)} <small>${s.turns}</small></span>` : ''; }).join('');
+    return `<section class="dcb-inspect ${c.side === 'enemy' ? 'is-enemy' : 'is-party'}">
+        <header>${avatarHtml(c)}<div class="dcb-ins-title"><strong>${escapeHtml(c.name)}</strong><span>${tier}<span class="dcb-lv">Lv ${c.level}</span></span></div>
+            <button type="button" class="dcb-icon-btn" data-action="inspect-close" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
+        ${c.description ? `<p class="dcb-ins-desc">${escapeHtml(c.description)}</p>` : ''}
+        <div class="dcb-ins-attrs">${attrs}</div>
+        <ul class="dcb-ins-stats">${stats}</ul>
+        ${sts ? `<div class="dcb-statuses">${sts}</div>` : ''}
+        <h4>Attacks &amp; abilities</h4>
+        <ul class="dcb-ins-actions">${list}</ul>
+    </section>`;
+}
+
 function fightHtml() {
     const actor = M.currentActor(fight);
     const enemies = fight.combatants.filter(c => c.side === 'enemy');
@@ -314,6 +373,7 @@ function fightHtml() {
         <div class="dcb-field is-enemies">${enemies.map(c => cardHtml(c, actor)).join('')}</div>
         <div class="dcb-turn">${turn}</div>
         <div class="dcb-field is-party">${party.map(c => cardHtml(c, actor)).join('')}</div>
+        ${inspectHtml()}
         ${mine ? actionsHtml(actor) : '<div class="dcb-actions is-waiting"><i class="fa-solid fa-hourglass-half"></i></div>'}
         ${logHtml()}
     </div>`;
@@ -429,6 +489,8 @@ async function setupAction(action, el) {
 }
 
 async function fightAction(action, el) {
+    if (action === 'inspect') { ui.inspect = ui.inspect === el.dataset.id ? null : el.dataset.id; render(); return; }
+    if (action === 'inspect-close') { ui.inspect = null; render(); return; }
     if (ui.busy || fight.phase !== 'active') {
         if (action === 'leave') return leave();
         return;

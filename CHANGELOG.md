@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Inspect fighters in combat.** An ⓘ button on every fighter card in the combat window opens a sheet with their six attributes, hit points, Mana, armour (and how much physical and magic damage it blocks), weapon bonus, current statuses and every attack, spell, skill or item: power, attribute, target, cooldown or Mana cost, and — for damaging moves — the expected damage and hit chance against whoever is in play.
+
 ### Changed
 - **Smaller prompts.** With compact prompts (the default) the Better Stats part of each request is about 15–20% smaller — roughly 300 tokens less per message in a scene with three characters — with nothing left out: the stats to update are one line per character instead of indented JSON, built-in attributes go by their abbreviation and six equal values are said once ("all attributes 10"), item/condition/ability lists drop their icons (the AI only needs them for what it adds), and the change examples and rules for equipment, conditions, abilities and XP are shorter.
 - **Stats, equipment, memories and the rest now belong to the chat.** Current stat values, equipment, conditions, spells and abilities, memories, levels, XP and the party used to be kept per Lore Library campaign, so a new chat with the same character — or the same persona — carried everything over. They are now saved inside the chat itself: a new chat starts from the starting values in the Workshop and asks again for starting gear and abilities, while branching or copying a chat takes its data along and deleting a chat deletes it. Stat sheets, starting values and settings stay shared. What you had from before is moved once into the first chat with a story you open after updating; other chats start clean.

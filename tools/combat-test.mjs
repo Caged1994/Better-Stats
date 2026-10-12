@@ -397,5 +397,12 @@ function winRate(heroes, enemies, n = 200) {
     band('party of 3 vs boss + 2 minions', winRate(['A', 'B', 'C'], [['e', 'boss'], ['m', 'minion'], ['n', 'minion']]), 0.6, 0.97);
 }
 
+// ── damageReduction (inspect panel) ──
+{
+    const t = C.makeCombatant({ id: 't', side: 'enemy', name: 'T', attrs: { con: 20 }, armor: 10 });
+    const r = C.damageReduction(t);
+    ok(r.physical > r.magic && r.magic > 0 && r.physical < 1, 'damageReduction: physical > magic, both in (0,1)');
+}
+
 console.log(`combat model: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
