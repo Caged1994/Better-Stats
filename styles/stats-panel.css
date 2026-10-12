@@ -1381,3 +1381,10 @@ input.dsp-xp-big { width: 3em; font-size: 20px; text-align: center; }
 }
 .dsp-aff-bar span { display: block; height: 100%; background: var(--dsp-aff); }
 .dsp-chip-input { width: 6em; font-size: 12px; }
+
+/* ── Combat values on an item (weapon / armour) ── */
+.dsp-gear-row { align-items: center; gap: 10px; }
+.dsp-gear-row label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; opacity: 0.85; }
+.dsp-gear-row input[type=number] { width: 64px; }
+.dsp-gear-label { font-size: 12px; font-weight: 600; }
+.dsp-gear-note { font-size: 11px; opacity: 0.6; padding: 2px 0; }

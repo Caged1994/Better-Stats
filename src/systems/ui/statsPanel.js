@@ -49,7 +49,7 @@ import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
 import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
-import { isCombatEnabled, getLiveEncounter } from '../features/combat.js';
+import { isCombatEnabled, getLiveEncounter, getItemCombat, setItemGear } from '../features/combat.js';
 import { affinityTier } from '../../utils/affinityModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
@@ -64,7 +64,7 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
 // editId: the entry being edited (null = adding a new one).
-const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '' };
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, gearEditable: true, atkHint: '', defHint: '' };
 const itemForm = { ...FORM_DEFAULTS };
 
 // Section tabs inside the panel. The last one used is remembered.
@@ -542,6 +542,15 @@ function effectText(effects) {
     return effects && Object.keys(effects).length ? describeEffects(selected.name, selected.isUser, effects) : '';
 }
 
+/** ⚔ / 🛡 values a weapon or armour counts for in combat (shown only when Combat is on). */
+function gearChip(item) {
+    if (!selected || !isCombatEnabled()) return '';
+    const c = getItemCombat(selected.name, selected.isUser, item);
+    if (!c.atk && !c.def) return '';
+    const txt = [c.atk ? `⚔${c.atk}` : '', c.def ? `🛡${c.def}` : ''].filter(Boolean).join(' ');
+    return `<span class="dsp-item-eff dsp-item-gear${item.equipped ? '' : ' is-idle'}" title="Combat: attack bonus / defence${item.equipped ? '' : ' (when equipped)'}">${txt}</span>`;
+}
+
 function itemHtml(raw) {
     const item = normalizeItem({ ...raw });
     const locked = item.aiCanRemove === false;
@@ -553,6 +562,7 @@ function itemHtml(raw) {
             <span class="dsp-item-main dsp-edit-open" title="Click to edit">
                 <span class="dsp-item-name">${escapeHtml(item.name)}</span>
                 ${eff ? `<span class="dsp-item-eff${item.equipped ? '' : ' is-idle'}">${escapeHtml(eff)}</span>` : ''}
+                ${gearChip(item)}
             </span>
             <span class="dsp-qty" title="Quantity">
                 <button type="button" class="dsp-qty-btn" data-qty="-1" title="One less">−</button>
@@ -602,6 +612,11 @@ function formHtml(kind) {
             </div>
             <input type="text" class="dsp-item-in-desc" data-field="desc" value="${escapeHtml(f.desc)}" placeholder="Very short description (shown on hover)" maxlength="120" aria-label="Description">
             <input type="text" class="dsp-item-in-eff" data-field="effects" value="${escapeHtml(f.effects)}" placeholder="${effPh}" maxlength="80" aria-label="Effects">
+            ${isItem && isCombatEnabled() ? (f.gearEditable ? `<div class="dsp-item-form-row dsp-gear-row" title="How much it counts for in combat while equipped. Leave both empty to let the AI (or the item's name) decide.">
+                <span class="dsp-gear-label">⚔ Combat</span>
+                <label>Attack <input type="number" class="dsp-item-in-atk" data-field="atk" data-gear="1" value="${escapeHtml(f.atk)}" placeholder="${escapeHtml(f.atkHint || 'auto')}" min="0" max="15" step="1"></label>
+                <label>Defence <input type="number" class="dsp-item-in-def" data-field="def" data-gear="1" value="${escapeHtml(f.def)}" placeholder="${escapeHtml(f.defHint || 'auto')}" min="0" max="15" step="1"></label>
+            </div>` : '<div class="dsp-gear-note">In a fight this item is used up (potion, bomb…), so it has no attack or defence.</div>') : ''}
             <div class="dsp-item-form-row">
                 ${isItem ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-equipped" ${f.equipped ? 'checked' : ''}> Equipped</label>` : ''}
                 ${isItem || isAbility ? `<label class="dsp-check"><input type="checkbox" class="dsp-item-in-ai" ${f.aiCanRemove ? 'checked' : ''}> AI can remove</label>` : ''}
@@ -630,6 +645,14 @@ function openEdit(kind, id) {
         aiCanRemove: e.aiCanRemove !== false, type: e.type === 'spell' ? 'spell' : 'ability',
         cost: e.cost || '',
     });
+    if (kind === 'item') {
+        const c = getItemCombat(selected.name, selected.isUser, e);
+        Object.assign(itemForm, {
+            gearEditable: c.editable,
+            atk: c.stored ? String(c.atk) : '', def: c.stored ? String(c.def) : '',
+            atkHint: c.stored ? '' : `auto ${c.atk}`, defHint: c.stored ? '' : `auto ${c.def}`,
+        });
+    }
     renderAll();
 }
 
@@ -756,6 +779,11 @@ function submitItemForm() {
         });
     }
     if (res && res.error) { f.error = res.error; renderAll(); return; }
+    if (f.kind === 'item' && f.gearTouched && f.gearEditable && isCombatEnabled()) {
+        const num = (v) => (String(v).trim() === '' ? null : Math.max(0, Math.min(15, Math.round(Number(v)) || 0)));
+        const a = num(f.atk), d = num(f.def);
+        setItemGear(selected.name, selected.isUser, f.name.trim(), a === null && d === null ? null : a, a === null && d === null ? null : d);
+    }
     resetForm();
     renderAll();
 }
@@ -1100,7 +1128,7 @@ function bindRootListeners(root) {
         const xpField = e.target.getAttribute && e.target.getAttribute('data-xp-field');
         if (xpField) { xpForm[xpField] = e.target.value; return; }
         const field = e.target.getAttribute && e.target.getAttribute('data-field');
-        if (field) { itemForm[field] = e.target.value; itemForm.error = ''; }
+        if (field) { itemForm[field] = e.target.value; itemForm.error = ''; if (e.target.getAttribute('data-gear')) itemForm.gearTouched = true; }
     });
     root.addEventListener('change', (e) => {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;

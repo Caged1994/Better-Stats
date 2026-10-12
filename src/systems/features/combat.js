@@ -92,6 +92,41 @@ export function setStoredProfile(owner, kind, name, profile) {
     return p;
 }
 
+/** Forgets a saved profile, so the action is labelled again (by the AI or by its name). */
+export function clearStoredProfile(owner, kind, name) {
+    const s = profileStore();
+    const bag = s?.[owner];
+    if (!bag || !(profKey(kind, name) in bag)) return false;
+    delete bag[profKey(kind, name)];
+    saveChatScope();
+    return true;
+}
+
+/**
+ * What an item counts for in a fight, for the Equipment tab.
+ * `editable` is false when the item is a potion, bomb, etc. (not a weapon or armour).
+ * `stored` is true when the numbers were set (by you or by the AI) rather than guessed.
+ */
+export function getItemCombat(name, isUser, item) {
+    const owner = statKey(name, isUser);
+    const stored = getStoredProfile(owner, 'item', item.name);
+    const eff = stored || M.guessProfile('item', item.name, item.desc, { effects: item.effects });
+    const gear = !!eff && eff.type === 'gear';
+    return {
+        stored: !!stored,
+        editable: !eff || eff.type === 'gear' || eff.type === 'none',
+        atk: gear ? eff.atk : 0,
+        def: gear ? eff.def : 0,
+    };
+}
+
+/** Sets an item's weapon and armour values by hand; `null` for both goes back to automatic. */
+export function setItemGear(name, isUser, itemName, atk, def) {
+    const owner = statKey(name, isUser);
+    if (atk === null && def === null) return clearStoredProfile(owner, 'item', itemName);
+    return !!setStoredProfile(owner, 'item', itemName, { type: 'gear', atk: atk || 0, def: def || 0 });
+}
+
 // ─── Fighters ───────────────────────────────────────────────────────────────
 
 function combatId(prefix, name) {

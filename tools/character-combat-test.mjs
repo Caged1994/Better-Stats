@@ -267,5 +267,23 @@ Cb.setCombatNarration(false);
 check('the story can be switched off', Cb.isCombatNarrationOn() === false);
 Cb.setCombatNarration(true);
 
+// ── Hand-set weapon values (Equipment tab) ──
+{
+    const sword = Eq.getEquipment('Mastera', true).find(i => i.name === 'Long sword');
+    const potion = Eq.getEquipment('Mastera', true).find(i => i.name === 'Healing potion');
+    const auto = Cb.getItemCombat('Mastera', true, sword);
+    check('item combat: a sword is editable gear', auto.editable && auto.atk > 0);
+    check('item combat: a potion is not editable gear', !Cb.getItemCombat('Mastera', true, potion).editable);
+    Cb.setItemGear('Mastera', true, 'Long sword', 9, 3);
+    const set = Cb.getItemCombat('Mastera', true, sword);
+    check('item combat: hand-set values are stored', set.stored && set.atk === 9 && set.def === 3);
+    check('item combat: the fighter uses them', Cb.buildPartyMember('Mastera', true).combatant.atkBonus === 9);
+    Cb.setItemGear('Mastera', true, 'Long sword', 99, -4);
+    const clamped = Cb.getItemCombat('Mastera', true, sword);
+    check('item combat: values are clamped 0–15', clamped.atk === 15 && clamped.def === 0);
+    Cb.setItemGear('Mastera', true, 'Long sword', null, null);
+    check('item combat: clearing goes back to automatic', !Cb.getItemCombat('Mastera', true, sword).stored);
+}
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nall combat checks passed');
 process.exit(failures ? 1 : 0);

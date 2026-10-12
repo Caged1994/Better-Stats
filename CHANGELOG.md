@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Weapon and armour values you can see and set.** In the Equipment tab, the edit form of an item now has Attack and Defence fields (0–15) for what it counts for in combat while equipped, and weapons and armour show ⚔/🛡 chips next to their name. The empty fields say what the game would use on its own (from the AI's label or the item's name); leaving both empty goes back to automatic. Potions, bombs and other use-up items have no such fields.
 - **Inspect fighters in combat.** An ⓘ button on every fighter card in the combat window opens a sheet with their six attributes, hit points, Mana, armour (and how much physical and magic damage it blocks), weapon bonus, current statuses and every attack, spell, skill or item: power, attribute, target, cooldown or Mana cost, and — for damaging moves — the expected damage and hit chance against whoever is in play.
 
 ### Changed
