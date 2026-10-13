@@ -50,6 +50,10 @@ import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/r
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
 import { isCombatEnabled, getLiveEncounter, getActionProfile, setActionProfile, describeProfile } from '../features/combat.js';
+import {
+    isChecksEnabled, getCheckAttributes, checkChance, rollCheckFor, getPendingCheck, dismissPendingCheck, pendingActor, getRecentChecks,
+} from '../features/characterChecks.js';
+import { DIFFICULTIES, resolveDifficulty, degreeLabel, rollText, MAX_BONUS } from '../../utils/checkModel.js';
 import { STATUSES as COMBAT_STATUSES, STATUS_IDS as COMBAT_STATUS_IDS, ATTRIBUTE_IDS as COMBAT_ATTRS } from '../../utils/combatModel.js';
 import { affinityTier } from '../../utils/affinityModel.js';
 
@@ -67,6 +71,8 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // editId: the entry being edited (null = adding a new one).
 const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbAuto: null };
 const itemForm = { ...FORM_DEFAULTS };
+// The roll form (🎲 in the header), kept across repaints; `last` is the result just rolled.
+const checkForm = { open: false, stat: '', difficulty: 'medium', bonus: '0', reason: '', last: null };
 
 // Section tabs inside the panel. The last one used is remembered.
 const SECTIONS = [
@@ -288,6 +294,78 @@ function rpgOffHtml(head) {
     </div>`;
 }
 
+
+// ─── Checks (🎲) ────────────────────────────────────────────────────────────
+
+const signedNum = (n) => (n > 0 ? `+${n}` : String(n));
+
+function checkResultHtml(r, { compact = false } = {}) {
+    const good = r.success;
+    const cls = `dsp-check-result ${good ? 'is-good' : 'is-bad'}${r.degree.startsWith('critical') ? ' is-crit' : ''}${compact ? ' is-compact' : ''}`;
+    const by = r.degree.startsWith('critical') ? '' : (r.success ? (r.margin > 0 ? ` by ${r.margin}` : '') : ` by ${Math.abs(r.margin)}`);
+    return `<div class="${cls}" title="${escapeHtml(`${r.name} · ${r.statLabel} · ${r.difficultyLabel} — ${rollText(r)}`)}">
+        <span class="dsp-check-die">${r.die}</span>
+        <span class="dsp-check-text"><strong>${escapeHtml(degreeLabel(r.degree))}${by}</strong>
+            <small>${escapeHtml(r.name)} · ${escapeHtml(r.statLabel)} ${escapeHtml(String(r.difficultyLabel))} · ${escapeHtml(rollText(r))}${r.reason ? ` · ${escapeHtml(r.reason)}` : ''}</small></span>
+    </div>`;
+}
+
+/** The AI's suggested check and the roll form, at the top of the panel. */
+function checkPanelHtml() {
+    if (!isChecksEnabled() || !selected) return '';
+    let html = '';
+    const pending = getPendingCheck();
+    if (pending) {
+        const actor = pendingActor(pending);
+        const diff = pending.difficulty ? resolveDifficulty(pending.difficulty) : resolveDifficulty(pending.dc);
+        const attr = actor ? getCheckAttributes(actor.name, actor.isUser).find(a => a.id.toLowerCase() === String(pending.stat).toLowerCase() || String(a.abbr).toLowerCase() === String(pending.stat).toLowerCase()) : null;
+        if (actor && attr) {
+            const chance = checkChance(actor.name, actor.isUser, attr.id, diff.dc);
+            html += `<div class="dsp-check-ask">
+                <span class="dsp-check-ask-icon">🎲</span>
+                <span class="dsp-check-ask-text"><strong>The story asks for a check</strong>
+                    <small>${escapeHtml(actor.name)} · ${escapeHtml(String(attr.abbr).toUpperCase())} ${escapeHtml(diff.id ? diff.label : `DC ${diff.dc}`)} (needs ${diff.dc}) · ${Math.round((chance ?? 0) * 100)}% to succeed${pending.reason ? ` · ${escapeHtml(pending.reason)}` : ''}</small></span>
+                <button type="button" class="dsp-text-btn is-primary" data-action="check-roll-pending">Roll</button>
+                <button type="button" class="dsp-icon-btn" data-action="check-dismiss" title="Not now" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>
+            </div>`;
+        }
+    }
+    if (checkForm.open) {
+        const attrs = getCheckAttributes(selected.name, selected.isUser);
+        if (!attrs.some(a => a.id === checkForm.stat)) checkForm.stat = attrs[0]?.id || '';
+        const diff = resolveDifficulty(checkForm.difficulty);
+        const bonus = Math.max(-MAX_BONUS, Math.min(MAX_BONUS, Math.round(Number(checkForm.bonus) || 0)));
+        const chance = checkForm.stat ? checkChance(selected.name, selected.isUser, checkForm.stat, diff.dc, bonus) : null;
+        const recent = getRecentChecks(4).filter(r => !checkForm.last || r.id !== checkForm.last.id);
+        html += `<div class="dsp-check-form">
+            <div class="dsp-check-row">
+                <label>Attribute <select class="dsp-chk" data-chk="stat">${attrs.map(a => `<option value="${escapeHtml(a.id)}"${a.id === checkForm.stat ? ' selected' : ''}>${escapeHtml(String(a.abbr).toUpperCase())} ${a.value} (${signedNum(a.modifier)})</option>`).join('')}</select></label>
+                <label>Difficulty <select class="dsp-chk" data-chk="difficulty">${DIFFICULTIES.map(d => `<option value="${d.id}"${d.id === diff.id ? ' selected' : ''}>${d.label} · ${d.dc}</option>`).join('')}</select></label>
+                <label>Bonus <input type="number" class="dsp-chk-bonus" data-chk="bonus" value="${escapeHtml(String(checkForm.bonus))}" min="${-MAX_BONUS}" max="${MAX_BONUS}" step="1" title="A favourable (+) or awkward (−) situation"></label>
+            </div>
+            <div class="dsp-check-row">
+                <input type="text" class="dsp-chk-reason" data-chk="reason" value="${escapeHtml(checkForm.reason)}" placeholder="What is attempted (optional, the AI reads it)" maxlength="100">
+                <span class="dsp-check-chance" title="Natural 20 always succeeds, natural 1 always fails">${chance === null ? '' : `${Math.round(chance * 100)}%`}</span>
+                <button type="button" class="dsp-text-btn is-primary" data-action="check-roll" ${attrs.length ? '' : 'disabled'}><i class="fa-solid fa-dice-d20"></i> Roll</button>
+            </div>
+            ${checkForm.last ? checkResultHtml(checkForm.last) + '<p class="dsp-section-hint">The result goes into the AI\'s next reply: write what you do and it will follow the roll.</p>' : ''}
+            ${recent.length ? `<div class="dsp-check-recent">${recent.map(r => checkResultHtml(r, { compact: true })).join('')}</div>` : ''}
+        </div>`;
+    }
+    return html ? `<section class="dsp-check-wrap">${html}</section>` : '';
+}
+
+function doRoll(name, isUser, o) {
+    const r = rollCheckFor(name, isUser, o);
+    if (r) {
+        checkForm.last = r;
+        checkForm.open = true;
+        checkForm.reason = '';
+        selected = characterTabs().find(t => t.isUser === !!isUser && t.name.toLowerCase() === String(name).toLowerCase()) || selected;
+    }
+    renderAll();
+}
+
 function buildHtml({ popout }) {
     const tabs = characterTabs();
     if (!selected && tabs.length) selected = tabs[0];
@@ -297,6 +375,7 @@ function buildHtml({ popout }) {
             <span class="dsp-title"><i class="fa-solid fa-chart-simple"></i> Stats</span>
             ${campaign ? `<span class="dsp-campaign" title="Active campaign — portraits and descriptions follow it; values belong to this chat">${escapeHtml(campaign)}</span>` : ''}
             <span class="dsp-spacer"></span>
+            ${isChecksEnabled() ? `<button type="button" class="dsp-icon-btn${checkForm.open || getPendingCheck() ? ' is-on' : ''}" data-action="check-toggle" title="${getPendingCheck() ? 'The story asks for a check' : 'Roll a check'}"><i class="fa-solid fa-dice-d20"></i></button>` : ''}
             ${isCombatEnabled() ? `<button type="button" class="dsp-icon-btn${getLiveEncounter() ? ' is-on' : ''}" data-action="combat" title="${getLiveEncounter() ? 'A fight is in progress — resume it' : 'Start a turn-based fight'}"><i class="fa-solid fa-khanda"></i></button>` : ''}
             <button type="button" class="dsp-icon-btn${isRpgModeActive() ? ' is-on' : ''}" data-action="${isRpgModeActive() ? 'rpg-off' : 'rpg-on'}" title="RPG mode is ${isRpgModeActive() ? 'on — click to turn it off for this card' : 'off — click to turn it on'}"><i class="fa-solid fa-power-off"></i></button>
             ${popout
@@ -397,6 +476,7 @@ function buildHtml({ popout }) {
                     <i class="fa-solid fa-rotate-left"></i> Reset
                 </button>
             </section>
+            ${checkPanelHtml()}
             ${isStatGenerationPending(selected.name, selected.isUser) ? `
             <div class="dsp-pending"><i class="fa-solid fa-wand-magic-sparkles"></i>
                 The AI will generate ${escapeHtml(selected.name)}'s stats to fit who they are in their next reply. Until then these are placeholders.</div>` : ''}
@@ -1169,6 +1249,22 @@ function bindRootListeners(root) {
         if (action === 'item-cancel') { resetForm(); renderAll(); return; }
         if (action === 'item-add') { submitItemForm(); return; }
         if (action === 'xp-add') { submitXpForm(); return; }
+        if (action === 'check-toggle') { checkForm.open = !checkForm.open; if (!checkForm.open) checkForm.last = null; renderAll(); return; }
+        if (action === 'check-roll' && selected) {
+            // Some browsers do not focus a button on click: leave the text field so the repaint is not held back.
+            try { root.ownerDocument.activeElement?.blur?.(); } catch (err) { /* no focus */ }
+            const diff = resolveDifficulty(checkForm.difficulty);
+            doRoll(selected.name, selected.isUser, { stat: checkForm.stat, difficulty: diff.id || diff.dc, bonus: Number(checkForm.bonus) || 0, reason: checkForm.reason, source: 'player' });
+            return;
+        }
+        if (action === 'check-roll-pending') {
+            try { root.ownerDocument.activeElement?.blur?.(); } catch (err) { /* no focus */ }
+            const p = getPendingCheck();
+            const actor = pendingActor(p);
+            if (p && actor) doRoll(actor.name, actor.isUser, { stat: p.stat, difficulty: p.difficulty || p.dc, bonus: 0, reason: p.reason, source: 'ai' });
+            return;
+        }
+        if (action === 'check-dismiss') { dismissPendingCheck(); renderAll(); return; }
         if (action === 'combat') { import('./combatModal.js').then(m => m.openCombat()).catch(e => console.error('[Dooms Tracker] Combat window failed to open', e)); return; }
         if (action === 'rpg-on') { toggleRpgModeHere(true); return; }
         if (action === 'rpg-off') {
@@ -1199,6 +1295,8 @@ function bindRootListeners(root) {
     root.addEventListener('input', (e) => {
         const xpField = e.target.getAttribute && e.target.getAttribute('data-xp-field');
         if (xpField) { xpForm[xpField] = e.target.value; return; }
+        const chk = e.target.getAttribute && e.target.getAttribute('data-chk');
+        if (chk && (chk === 'bonus' || chk === 'reason')) { checkForm[chk] = e.target.value; return; }
         const field = e.target.getAttribute && e.target.getAttribute('data-field');
         if (field) { itemForm[field] = e.target.value; itemForm.error = ''; if (e.target.getAttribute('data-gear')) itemForm.gearTouched = true; }
     });
@@ -1206,6 +1304,8 @@ function bindRootListeners(root) {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-ai')) itemForm.aiCanRemove = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-equipped')) itemForm.equipped = e.target.checked;
         if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; renderAll(); }
+        const chkSel = e.target.getAttribute && e.target.getAttribute('data-chk');
+        if (chkSel) { checkForm[chkSel] = e.target.value; renderAll(); return; }
         const cb = e.target.getAttribute && e.target.getAttribute('data-cb');
         if (cb) {
             itemForm[cb] = e.target.value;

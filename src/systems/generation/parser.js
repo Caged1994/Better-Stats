@@ -93,8 +93,8 @@ function debugLog(message, data = null) {
     }
 }
 /** Keys of the unified tracker object that are not trackers of their own. */
-const EXTRA_KEYS = ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells', 'xp', 'experience', 'levels', 'money', 'currency', 'affinity'];
-const EXTRA_RESULT_KEYS = ['stats', 'memories', 'equipment', 'conditions', 'abilities', 'xp', 'levels', 'money', 'currency', 'affinity'];
+const EXTRA_KEYS = ['stats', 'memories', 'equipment', 'inventory', 'conditions', 'abilities', 'skills', 'spells', 'xp', 'experience', 'levels', 'money', 'currency', 'affinity', 'check'];
+const EXTRA_RESULT_KEYS = ['stats', 'memories', 'equipment', 'conditions', 'abilities', 'xp', 'levels', 'money', 'currency', 'affinity', 'check'];
 
 /**
  * Copies the Better Stats keys of a parsed tracker object into `result` as
@@ -116,6 +116,7 @@ function extractExtraKeys(parsed, result) {
         money: parsed.money,
         currency: parsed.currency,
         affinity: parsed.affinity,
+        check: parsed.check,
     };
     for (const key of EXTRA_RESULT_KEYS) {
         const v = src[key];
@@ -162,7 +163,9 @@ export function parseResponse(responseText) {
         // Money (characterMoney.js) and affinity (characterAffinity.js).
         money: null,
         currency: null,
-        affinity: null
+        affinity: null,
+        // Checks (characterChecks.js): the AI's suggested "check".
+        check: null
     };
     // DEBUG: Log full response for troubleshooting
     debugLog('[RPG Parser] ==================== PARSING AI RESPONSE ====================');

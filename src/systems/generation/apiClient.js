@@ -36,6 +36,7 @@ import { applyAIAbilities } from '../features/characterAbilities.js';
 import { applyAIProgress } from '../features/characterProgress.js';
 import { applyAIMoney, applyAICurrency } from '../features/characterMoney.js';
 import { applyAIAffinity } from '../features/characterAffinity.js';
+import { settleChecks } from '../features/characterChecks.js';
 import { renderThoughts, updateChatThoughts } from '../rendering/thoughts.js';
 import { renderQuests } from '../rendering/quests.js';
 import { i18n } from '../../core/i18n.js';
@@ -372,6 +373,8 @@ export async function updateRPGData(renderInfoBox, renderThoughts) {
                 try { if (parsedData.money) applyAIMoney(parsedData.money, chat.length - 1); } catch (e) { console.warn('[Dooms Tracker] Money: applying AI update failed', e); }
                 try { if (parsedData.affinity) applyAIAffinity(parsedData.affinity, chat.length - 1); } catch (e) { console.warn('[Dooms Tracker] Affinity: applying AI update failed', e); }
             }
+            // Checks: the AI's suggested roll; the outcome of the last one has been answered.
+            try { settleChecks(parsedData.check, chat.length - 1); } catch (e) { console.warn('[Dooms Tracker] Checks: applying AI update failed', e); }
             if (parsedData.stats) {
                 try {
                     applyAIStatUpdates(parsedData.stats, chat.length - 1);
