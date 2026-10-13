@@ -50,6 +50,7 @@ import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/r
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
 import { isDungeonEnabled, hasLiveDungeon } from '../features/dungeon.js';
+import { isSphereEnabled } from '../features/sphereGrid.js';
 import { isCombatEnabled, getLiveEncounter, getActionProfile, setActionProfile, describeProfile } from '../features/combat.js';
 import {
     isChecksEnabled, getCheckAttributes, checkChance, rollCheckFor, getPendingCheck, dismissPendingCheck, pendingActor, getRecentChecks,
@@ -523,6 +524,7 @@ function xpHtml(prog) {
                 </div>
             </div>
             ${partyRow}
+            ${isSphereEnabled() ? `<div class="dsp-xp-add"><button type="button" class="dsp-text-btn" data-action="sphere" title="Spend points on ${escapeHtml(who.name)}'s growth grid"><i class="fa-solid fa-diagram-project"></i> Sphere grid${prog.points ? ` — ${prog.points} point${prog.points === 1 ? '' : 's'} to spend` : ''}</button></div>` : ''}
             ${xpOn && party ? `
             <div class="dsp-xp-add">
                 <input type="number" class="dsp-xp-in-amount" data-xp-field="amount" value="${escapeHtml(xpForm.amount)}" placeholder="XP" step="1" aria-label="XP to add (negative to take away)">
@@ -1267,6 +1269,7 @@ function bindRootListeners(root) {
             return;
         }
         if (action === 'check-dismiss') { dismissPendingCheck(); renderAll(); return; }
+        if (action === 'sphere') { import('./sphereModal.js').then(m => m.openSphereGrid(selected?.name, !!selected?.isUser)).catch(e => console.error('[Dooms Tracker] Sphere grid failed to open', e)); return; }
         if (action === 'dungeon') { import('./dungeonModal.js').then(m => m.openDungeon()).catch(e => console.error('[Dooms Tracker] Dungeon window failed to open', e)); return; }
         if (action === 'combat') { import('./combatModal.js').then(m => m.openCombat()).catch(e => console.error('[Dooms Tracker] Combat window failed to open', e)); return; }
         if (action === 'rpg-on') { toggleRpgModeHere(true); return; }

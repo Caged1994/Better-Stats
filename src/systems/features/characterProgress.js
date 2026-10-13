@@ -314,6 +314,18 @@ export function refundPoint(name, isUser, statId) {
     return true;
 }
 
+/** Spends `n` unspent points on something other than an attribute (the sphere grid). */
+export function spendPointsOn(name, isUser, n) {
+    const cost = Math.max(0, Math.round(Number(n) || 0));
+    const key = statKey(name, isUser);
+    const r = readByKey(key);
+    if (r.points < cost) return false;
+    r.points -= cost;
+    writeByKey(key, r);
+    changed({ name });
+    return true;
+}
+
 // ─── Cleanup hooks ──────────────────────────────────────────────────────────
 
 export function deleteProgressEverywhere(name, isUser = false) {

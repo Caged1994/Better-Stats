@@ -1,0 +1,53 @@
+/* ============================================
+   SPHERE GRID WINDOW (src/systems/ui/sphereModal.js)
+   Reuses the combat window's look (.dcb); only what is new is here.
+   Loaded on first use (cssLoader id 'sphere').
+   ============================================ */
+
+.dsg-window { width: min(860px, 100%); height: min(780px, 100%); }
+.dsg-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 8px 0; }
+.dsg-check input { margin-top: 3px; }
+
+.dsg-whos { display: flex; gap: 6px; padding: 8px 14px; overflow-x: auto; border-bottom: 1px solid var(--dcb-border); flex: 0 0 auto; }
+.dsg-who { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; border: 1px solid var(--dcb-border); background: var(--dcb-card); color: var(--dcb-text); cursor: pointer; font-size: 13px; min-height: 34px; white-space: nowrap; }
+.dsg-who .dcb-avatar { width: 26px; height: 26px; font-size: 11px; }
+.dsg-who.is-on { border-color: var(--dcb-accent); background: var(--dcb-card-hover); }
+
+.dsg-body { gap: 10px; }
+.dsg-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dsg-points { font-weight: 700; }
+.dsg-points.is-up { color: #ffd166; }
+.dsg-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; }
+.dsg-notice { margin: 0; padding: 8px 10px; border-radius: 9px; font-size: 13px; background: var(--dcb-card); border: 1px solid var(--dcb-border); }
+.dsg-notice.is-good { border-color: var(--dcb-hp); }
+.dsg-notice.is-warn { border-color: #e0a63a; }
+
+.dsg-main { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1 1 auto; }
+.dsg-scroll { overflow: auto; border: 1px solid var(--dcb-border); border-radius: 12px; background: rgba(0, 0, 0, 0.25); padding: 12px; max-height: 420px; flex: 0 1 auto; }
+.dsg-map { display: grid; width: max-content; margin: 0 auto; }
+
+.dsg-node { position: relative; display: flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; padding: 0; border-radius: 50%; border: 2px solid var(--dcb-border); background: rgba(255, 255, 255, 0.04); color: var(--dcb-muted); cursor: pointer; width: 46px; height: 46px; }
+.dsg-node b { font-size: 11px; letter-spacing: 0.04em; }
+.dsg-node.t-ability { border-radius: 12px; }
+.dsg-node.t-passive { border-radius: 12px; transform: rotate(0deg); }
+.dsg-node.is-reach { color: var(--dcb-text); border-color: #ffd166; background: rgba(255, 209, 102, 0.12); }
+.dsg-node.is-owned { color: #fff; border-color: var(--dcb-hp); background: rgba(76, 195, 138, 0.28); }
+.dsg-node.t-start.is-owned { border-color: #fff; }
+.dsg-node.is-selected { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6); }
+.dsg-cost { position: absolute; right: -3px; bottom: -3px; min-width: 16px; height: 16px; border-radius: 8px; background: #3a2f6d; color: #fff; font-size: 10px; font-style: normal; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+.dsg-link { background: var(--dcb-border); align-self: center; justify-self: center; }
+.dsg-link.is-h { width: 100%; height: 3px; }
+.dsg-link.is-v { height: 100%; width: 3px; }
+.dsg-link.is-lit { background: var(--dcb-hp); }
+
+.dsg-detail { padding: 12px; border: 1px solid var(--dcb-border); border-radius: 12px; background: var(--dcb-card); display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
+.dsg-detail p { margin: 0; font-size: 13px; }
+.dsg-detail > header { display: flex; gap: 10px; align-items: center; }
+.dsg-detail > header div { display: flex; flex-direction: column; }
+.dsg-detail > header small { color: var(--dcb-muted); font-size: 11px; }
+.dsg-detail-icon { font-size: 24px; min-width: 32px; text-align: center; }
+.dsg-eff { color: var(--dcb-muted); }
+
+@media (max-width: 640px) {
+    .dsg-window { width: 100%; }
+}
