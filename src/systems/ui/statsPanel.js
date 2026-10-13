@@ -49,6 +49,7 @@ import { formatXpAmount, MAX_LEVEL } from '../../utils/xpModel.js';
 import { isRpgModeActive, toggleRpgModeHere, rpgModeSource } from '../features/rpgMode.js';
 import { isMoneyEnabled, getMoney, setMoney, hasPurse, formatAmount, getCurrency } from '../features/characterMoney.js';
 import { isAffinityEnabled, getAffinityRecord, setAffinity } from '../features/characterAffinity.js';
+import { isDungeonEnabled, hasLiveDungeon } from '../features/dungeon.js';
 import { isCombatEnabled, getLiveEncounter, getActionProfile, setActionProfile, describeProfile } from '../features/combat.js';
 import {
     isChecksEnabled, getCheckAttributes, checkChance, rollCheckFor, getPendingCheck, dismissPendingCheck, pendingActor, getRecentChecks,
@@ -377,6 +378,7 @@ function buildHtml({ popout }) {
             <span class="dsp-spacer"></span>
             ${isChecksEnabled() ? `<button type="button" class="dsp-icon-btn${checkForm.open || getPendingCheck() ? ' is-on' : ''}" data-action="check-toggle" title="${getPendingCheck() ? 'The story asks for a check' : 'Roll a check'}"><i class="fa-solid fa-dice-d20"></i></button>` : ''}
             ${isCombatEnabled() ? `<button type="button" class="dsp-icon-btn${getLiveEncounter() ? ' is-on' : ''}" data-action="combat" title="${getLiveEncounter() ? 'A fight is in progress — resume it' : 'Start a turn-based fight'}"><i class="fa-solid fa-khanda"></i></button>` : ''}
+            ${isDungeonEnabled() ? `<button type="button" class="dsp-icon-btn${hasLiveDungeon() ? ' is-on' : ''}" data-action="dungeon" title="${hasLiveDungeon() ? 'An expedition is waiting — resume it' : 'Explore a dungeon'}"><i class="fa-solid fa-dungeon"></i></button>` : ''}
             <button type="button" class="dsp-icon-btn${isRpgModeActive() ? ' is-on' : ''}" data-action="${isRpgModeActive() ? 'rpg-off' : 'rpg-on'}" title="RPG mode is ${isRpgModeActive() ? 'on — click to turn it off for this card' : 'off — click to turn it on'}"><i class="fa-solid fa-power-off"></i></button>
             ${popout
                 ? '<button type="button" class="dsp-icon-btn" data-action="dock" title="Back into SillyTavern"><i class="fa-solid fa-down-left-and-up-right-to-center"></i></button>'
@@ -1265,6 +1267,7 @@ function bindRootListeners(root) {
             return;
         }
         if (action === 'check-dismiss') { dismissPendingCheck(); renderAll(); return; }
+        if (action === 'dungeon') { import('./dungeonModal.js').then(m => m.openDungeon()).catch(e => console.error('[Dooms Tracker] Dungeon window failed to open', e)); return; }
         if (action === 'combat') { import('./combatModal.js').then(m => m.openCombat()).catch(e => console.error('[Dooms Tracker] Combat window failed to open', e)); return; }
         if (action === 'rpg-on') { toggleRpgModeHere(true); return; }
         if (action === 'rpg-off') {

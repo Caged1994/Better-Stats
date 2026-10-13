@@ -93,10 +93,10 @@ export function checkChance(name, isUser, statId, dc, bonus = 0) {
  * Rolls a check for a character and records it for the next prompt.
  * @param {string} name
  * @param {boolean} isUser
- * @param {{stat: string, difficulty?: string|number, bonus?: number, reason?: string, source?: 'player'|'ai', rng?: Function}} o
+ * @param {{stat: string, difficulty?: string|number, bonus?: number, reason?: string, source?: 'player'|'ai'|'dungeon', rng?: Function, record?: boolean}} o
  * @returns {object|null} the recorded result, or null (no such attribute)
  */
-export function rollCheckFor(name, isUser, { stat, difficulty = 'medium', bonus = 0, reason = '', source = 'player', rng } = {}) {
+export function rollCheckFor(name, isUser, { stat, difficulty = 'medium', bonus = 0, reason = '', source = 'player', rng, record = true } = {}) {
     const attr = findAttribute(name, isUser, stat);
     if (!attr) return null;
     const diff = resolveDifficulty(difficulty);
@@ -108,11 +108,13 @@ export function rollCheckFor(name, isUser, { stat, difficulty = 'medium', bonus 
         difficultyLabel: diff.id ? diff.id : `DC ${diff.dc}`,
         ...r,
         reason: String(reason || '').replace(/\s+/g, ' ').trim().slice(0, 100),
-        source: source === 'ai' ? 'ai' : 'player',
+        source: source === 'ai' ? 'ai' : (source === 'dungeon' ? 'dungeon' : 'player'),
         at: Date.now(),
         afterIndex: lastIndex(),
         consumedAt: null,
     };
+    // `record: false` rolls without telling the story (a dungeon keeps its own log).
+    if (!record) return entry;
     const s = store(true);
     if (!s) return entry;
     s.results.push(entry);

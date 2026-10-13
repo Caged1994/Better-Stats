@@ -40,6 +40,7 @@ import { setMoneyEnabled, getCurrency, setCurrency } from '../features/character
 import { setAffinityEnabled } from '../features/characterAffinity.js';
 import { setConsequencesEnabled } from '../features/characterConsequences.js';
 import { setCombatEnabled, setCombatNarration } from '../features/combat.js';
+import { setDungeonEnabled, setDungeonNarration } from '../features/dungeon.js';
 import { setChecksEnabled } from '../features/characterChecks.js';
 
 function sixDigit(color) {
@@ -120,6 +121,8 @@ export function initStatsSettings() {
     flag('rpg-checks-enabled', 'checksEnabled');
     flag('rpg-combat-enabled', 'combatEnabled');
     flag('rpg-combat-narration', 'combatNarration');
+    flag('rpg-dungeon-enabled', 'dungeonEnabled');
+    flag('rpg-dungeon-narration', 'dungeonNarration');
     const memRecent = document.getElementById('rpg-memories-recent');
     if (memRecent) memRecent.value = String(getRecentLimit());
     renderXpSettings();
@@ -149,6 +152,8 @@ export function initStatsSettings() {
         else if (el.id === 'rpg-checks-enabled') setChecksEnabled(el.checked);
         else if (el.id === 'rpg-combat-enabled') setCombatEnabled(el.checked);
         else if (el.id === 'rpg-combat-narration') setCombatNarration(el.checked);
+        else if (el.id === 'rpg-dungeon-enabled') setDungeonEnabled(el.checked);
+        else if (el.id === 'rpg-dungeon-narration') setDungeonNarration(el.checked);
         else if (el.id && el.id.startsWith('rpg-mana-')) { setManaTier(el.id.slice(9), el.value); renderXpSettings(); }
         else if (el.id === 'rpg-currency-name' || el.id === 'rpg-currency-symbol') {
             const name = document.getElementById('rpg-currency-name')?.value || '';

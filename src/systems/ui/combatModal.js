@@ -28,6 +28,7 @@ let view = 'setup';
 let setup = null;
 let fight = null;
 let ui = null;
+let hooks = null; // set when a dungeon opens the fight: { onDone(report|null), narrate }
 
 function freshSetup() {
     const candidates = partyCandidates();
@@ -64,6 +65,7 @@ export async function openCombat() {
         return;
     }
     try { await ensureCss('combat'); } catch (e) { /* render unstyled rather than not at all */ }
+    hooks = null;
     ui = freshUi();
     const live = getLiveEncounter();
     if (live && (live.phase === 'active' || live.phase === 'ended')) {
@@ -83,6 +85,32 @@ export async function openCombat() {
 
 export function closeCombat() {
     if (root) { root.remove(); root = null; }
+}
+
+/**
+ * Opens a fight that is already built and saved (a dungeon's), skipping the
+ * setup. `onDone(report)` is called when the window is closed: with what the
+ * fight gave if it ended, or with null if it was left unfinished (it is kept).
+ * @param {object} state - the fight, already started
+ * @param {{ onDone?: Function, narrate?: boolean }} [o]
+ */
+export async function openEncounter(state, { onDone, narrate } = {}) {
+    try { await ensureCss('combat'); } catch (e) { /* unstyled rather than not at all */ }
+    ui = freshUi();
+    hooks = { onDone, narrate };
+    fight = state;
+    view = 'fight';
+    mount();
+    render();
+    if (fight.phase === 'ended') finish(); else pump();
+}
+
+function closeAndReport() {
+    const h = hooks;
+    const report = view === 'end' ? ui?.report || null : null;
+    hooks = null;
+    closeCombat();
+    if (h?.onDone) { try { h.onDone(report); } catch (e) { console.error('[Better Stats] dungeon hook failed', e); } }
 }
 
 // ─── Mounting ───────────────────────────────────────────────────────────────
@@ -434,7 +462,7 @@ function onClick(ev) {
     const el = ev.target.closest('[data-action]');
     if (!el || !root.contains(el)) return;
     const action = el.dataset.action;
-    if (action === 'close') { closeCombat(); return; }
+    if (action === 'close') { closeAndReport(); return; }
     if (view === 'setup') return setupAction(action, el);
     if (view === 'fight') return fightAction(action, el);
 }
@@ -574,7 +602,7 @@ async function finish() {
     view = 'end';
     ui.report = applyOutcome(fight);
     clearLiveEncounter();
-    const narrate = isCombatNarrationOn();
+    const narrate = hooks && hooks.narrate !== undefined ? !!hooks.narrate : isCombatNarrationOn();
     ui.narrationState = narrate ? 'working' : 'idle';
     render();
     if (!narrate) return;

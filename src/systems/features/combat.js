@@ -268,7 +268,7 @@ export function partyCandidates() {
 
 // ─── Setting up ─────────────────────────────────────────────────────────────
 
-function recentMessages(depth) {
+export function recentMessages(depth) {
     const out = [];
     const list = Array.isArray(chat) ? chat : [];
     for (const m of list.slice(-Math.max(1, depth))) {
@@ -319,7 +319,7 @@ export function presentCharacters(exclude = []) {
     return out;
 }
 
-function cardInfo() {
+export function cardInfo() {
     try {
         const ctx = getContext();
         const ch = Array.isArray(ctx.characters) ? ctx.characters[ctx.characterId] : null;
@@ -385,7 +385,12 @@ export function parseEncounterReply(text) {
  * @param {{situation?: string, generate?: Function, depth?: number}} [options]
  * @returns {Promise<{ environment: string, enemies: Array, labelled: number }>}
  */
-export async function generateEncounterSetup(party, { situation = '', generate = safeGenerateRaw, depth = 8 } = {}) {
+/**
+ * The fighters of a party, and the spells, skills and items among them that
+ * have no combat profile yet (to be labelled by the AI in the same request).
+ * @returns {{ members: Array, toLabel: Array, keyed: Map }}
+ */
+export function collectLabelRequests(party) {
     const members = party.map(p => ({ ...p, ...buildPartyMember(p.name, p.isUser) }));
     const toLabel = [];
     const keyed = new Map();
@@ -396,6 +401,22 @@ export async function generateEncounterSetup(party, { situation = '', generate =
             toLabel.push({ key, owner: u.owner, kind: u.kind, name: u.ref, desc: u.desc, effects: u.effects, cost: u.cost });
         }
     }
+    return { members, toLabel, keyed };
+}
+
+/** Saves the profiles the AI gave for the keys it was asked about. @returns {number} how many were kept */
+export function applyLabelReplies(profiles, keyed) {
+    let labelled = 0;
+    for (const [key, raw] of Object.entries(profiles || {})) {
+        const u = keyed.get(key);
+        if (!u) continue;
+        if (setStoredProfile(u.owner, u.kind, u.ref, raw)) labelled++;
+    }
+    return labelled;
+}
+
+export async function generateEncounterSetup(party, { situation = '', generate = safeGenerateRaw, depth = 8 } = {}) {
+    const { members, toLabel, keyed } = collectLabelRequests(party);
     const card = cardInfo();
     const currency = getCurrency();
     const messages = buildEncounterSetupPrompt({
@@ -411,22 +432,19 @@ export async function generateEncounterSetup(party, { situation = '', generate =
     });
     const reply = await generate({ prompt: messages, quietToLoud: false });
     const parsed = parseEncounterReply(reply);
-    let labelled = 0;
-    for (const [key, raw] of Object.entries(parsed.profiles)) {
-        const u = keyed.get(key);
-        if (!u) continue;
-        if (setStoredProfile(u.owner, u.kind, u.ref, raw)) labelled++;
-    }
+    const labelled = applyLabelReplies(parsed.profiles, keyed);
     return { environment: parsed.environment, enemies: parsed.enemies, labelled };
 }
 
 /** Fighters + enemies → a fight ready to start (not started). */
-export function buildEncounter(party, enemySpecs, { environment = '', seed = Date.now() } = {}) {
+export function buildEncounter(party, enemySpecs, { environment = '', seed = Date.now(), tag = null } = {}) {
     const members = party.map(p => buildPartyMember(p.name, p.isUser).combatant);
     const partyLevel = members.length ? Math.max(1, Math.round(members.reduce((s, m) => s + m.level, 0) / members.length)) : 1;
     const enemies = enemySpecs.map((spec, i) => M.buildEnemy(spec, { partyLevel, partySize: members.length, id: `e${i + 1}` }));
     const state = M.createCombat({ combatants: [...members, ...enemies], seed, environment });
     state.partyLevel = partyLevel;
+    // Marks a fight that belongs to something else (a dungeon room), so that one can find its result.
+    if (tag) state.tag = tag;
     return state;
 }
 
@@ -450,10 +468,54 @@ export function clearLiveEncounter() {
     if (s && s.state) { delete s.state; saveChatScope(); }
 }
 
+// ─── The last fight that belonged to something else ─────────────────────────
+
+/** Kept so a dungeon can learn how its room's fight ended even after a reload. */
+function recordLastEncounter(state, report) {
+    const s = chatStore('combatLast', true);
+    if (!s) return;
+    s.last = {
+        tag: state.tag,
+        result: state.result,
+        rounds: state.round,
+        xp: report.xpGiven || 0,
+        money: report.moneyAdded || 0,
+        items: [...(report.lootAdded || [])],
+        at: Date.now(),
+    };
+}
+
+export function getLastEncounter() {
+    const l = chatStore('combatLast')?.last;
+    return l && typeof l === 'object' ? l : null;
+}
+
 // ─── Outcome ────────────────────────────────────────────────────────────────
 
 function toast(kind, text) {
     try { window.toastr?.[kind]?.(text, 'Combat', { timeOut: 6000 }); } catch (e) { /* no toastr */ }
+}
+
+/**
+ * Gives money and items to the player's character (the party's purse and pack).
+ * @returns {{ money: number, items: string[] }} what was actually added
+ */
+export function grantSpoils({ money = 0, items = [] } = {}) {
+    const out = { money: 0, items: [] };
+    const persona = getPersonaName();
+    if (!persona) return out;
+    if (money > 0 && isMoneyEnabled()) {
+        setMoney(persona, true, (getMoney(persona, true) || 0) + money);
+        out.money = money;
+    }
+    if (items.length && isEquipmentEnabled()) {
+        for (const name of items) {
+            const have = getEquipment(persona, true).find(i => itemKey(i.name) === itemKey(name));
+            const res = have ? updateItem(persona, true, have.id, { qty: (have.qty || 1) + 1 }) : addItem(persona, true, { name, desc: 'Taken from a fight.' });
+            if (res && !res.error) out.items.push(name);
+        }
+    }
+    return out;
 }
 
 /**
@@ -497,18 +559,9 @@ export function applyOutcome(state) {
             awardPartyXp(r.xp, { reason: `Fight: ${r.defeated.map(d => d.name).join(', ')}`.slice(0, 80), source: 'ai' });
             report.xpGiven = r.xp;
         }
-        const persona = getPersonaName();
-        if (persona && r.money > 0 && isMoneyEnabled()) {
-            setMoney(persona, true, (getMoney(persona, true) || 0) + r.money);
-            report.moneyAdded = r.money;
-        }
-        if (persona && r.items.length && isEquipmentEnabled()) {
-            for (const name of r.items) {
-                const have = getEquipment(persona, true).find(i => itemKey(i.name) === itemKey(name));
-                const res = have ? updateItem(persona, true, have.id, { qty: (have.qty || 1) + 1 }) : addItem(persona, true, { name, desc: 'Taken from a fight.' });
-                if (res && !res.error) report.lootAdded.push(name);
-            }
-        }
+        const spoils = grantSpoils({ money: r.money, items: r.items });
+        report.moneyAdded = spoils.money;
+        report.lootAdded.push(...spoils.items);
     }
     const delta = state.result === 'victory' ? M.TUNING.affinityWin : state.result === 'fled' ? M.TUNING.affinityFlee : 0;
     if (delta) {
@@ -518,6 +571,7 @@ export function applyOutcome(state) {
             if (v !== null) report.affinity.push({ name: o.name, delta });
         }
     }
+    if (state.tag) recordLastEncounter(state, report);
     saveChatScope();
     notifyStatsChanged({ source: 'combat' });
     return report;

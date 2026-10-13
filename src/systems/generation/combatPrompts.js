@@ -15,16 +15,28 @@
  */
 import { TIERS, STATUS_IDS, POWERS } from '../../utils/combatModel.js';
 
-const clip = (text, max) => {
+export const clip = (text, max) => {
     const t = String(text ?? '').replace(/\s+/g, ' ').trim();
     return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t;
 };
 
 /** The last message is the freshest and is given room; older ones are shortened. */
-function chatBlock(messages, perMessage = 700, lastMessage = 2200) {
+export function chatBlock(messages, perMessage = 700, lastMessage = 2200) {
     const list = messages || [];
     const lines = list.map((m, i) => `${m.name ? m.name + ': ' : ''}${clip(m.text, i === list.length - 1 ? lastMessage : perMessage)}`).filter(Boolean);
     return lines.length ? lines.join('\n') : '(no messages yet)';
+}
+
+/**
+ * The part of a request that asks the AI to label spells, skills and items
+ * that have no combat profile yet ("" when there is nothing to label).
+ * @param {Array<{key, kind, name, desc, effects, cost}>} toLabel
+ */
+export function labelRequestText(toLabel = []) {
+    if (!toLabel.length) return '';
+    let user = `\nLabel these actions in "profiles", using the key given. For each: "type" is damage, heal, status (grants or inflicts a status), mana (restores Mana), cure (removes bad statuses), revive (raises a fallen ally), gear (a weapon or armour; give "atk" and "def" from 0 to 12) or none (passive, a key, food, anything useless in a fight). "power" is ${POWERS.join(', ')}. "stat" is the attribute it scales with (str, dex, con, int, wis, cha) or "none" for fixed effects like potions. "target" is enemy, enemies, ally, allies or self. "status" is ${STATUS_IDS.join(', ')} when it inflicts or grants one.\n`;
+    user += toLabel.map(a => `- ${a.key}: ${a.kind} "${a.name}"${a.desc ? ` — ${clip(a.desc, 100)}` : ''}${a.cost ? ` (cost: ${a.cost})` : ''}${a.effects ? ` [bonus ${a.effects}]` : ''}`).join('\n') + '\n';
+    return user;
 }
 
 /**
@@ -58,10 +70,7 @@ export function buildEncounterSetupPrompt({ player, party = [], situation = '', 
     user += `\nReturn:\n{\n  "environment": "one short sentence about the place",\n  "enemies": [\n    {"name": "…", "icon": "one emoji", "description": "one short line that keeps what the story says about them", "tier": "${TIERS.join('|')}", "levelDelta": 0, "focus": "str|dex|con|int|wis|cha", "attacks": [{"name": "…", "power": "${POWERS.join('|')}", "stat": "str|dex|int|wis|cha", "status": "optional: ${STATUS_IDS.join('|')}"}], "loot": {"money": 0, "items": ["optional short names"]}}\n  ]${toLabel.length ? ',\n  "profiles": { "<key>": {"type": "…", "power": "…", "stat": "…", "target": "…", "status": "…"} }' : ''}\n}\n`;
     user += `\nRules for the enemies:\n- 1 to 6 enemies that fit the scene. If the player's words, the latest message or the scene list already say who the enemies are, use exactly those: the same number, the same names, the same sex, age and look. Never rename them, add or drop any, or change what they are. Only invent what is not said.
 - An enemy that has no name in the story gets a plain label ("Bandit 1", "Bandit 2"…) in the language of the chat, not an invented name. Enemies you add yourself may have a name that fits.\n- tier says how dangerous each is: minion (weak, one of a crowd), normal, elite (clearly stronger), boss (rare, a real threat). Most fights are minions and normals. levelDelta is −2…+3 against the party.\n- 1 to 3 attacks each, with a name that suits the enemy. Do not write any hit points, damage or other numbers.\n- loot is optional and small: money in ${currency || 'the story\'s currency'} (a plausible pocketful, not a fortune) and at most one or two ordinary items.\n`;
-    if (toLabel.length) {
-        user += `\nLabel these actions in "profiles", using the key given. For each: "type" is damage, heal, status (grants or inflicts a status), mana (restores Mana), cure (removes bad statuses), revive (raises a fallen ally), gear (a weapon or armour; give "atk" and "def" from 0 to 12) or none (passive, a key, food, anything useless in a fight). "power" is ${POWERS.join(', ')}. "stat" is the attribute it scales with (str, dex, con, int, wis, cha) or "none" for fixed effects like potions. "target" is enemy, enemies, ally, allies or self. "status" is ${STATUS_IDS.join(', ')} when it inflicts or grants one.\n`;
-        user += toLabel.map(a => `- ${a.key}: ${a.kind} "${a.name}"${a.desc ? ` — ${clip(a.desc, 100)}` : ''}${a.cost ? ` (cost: ${a.cost})` : ''}${a.effects ? ` [bonus ${a.effects}]` : ''}`).join('\n') + '\n';
-    }
+    user += labelRequestText(toLabel);
     return [{ role: 'system', content: sys.trim() }, { role: 'user', content: user.trim() }];
 }
 

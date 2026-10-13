@@ -1,0 +1,68 @@
+/* ============================================
+   DUNGEON WINDOW (src/systems/ui/dungeonModal.js)
+   Reuses the combat window's look (.dcb); only what is new is here.
+   Loaded on first use (cssLoader id 'dungeon').
+   ============================================ */
+
+.ddg-window.ddg-view-explore { height: min(780px, 100%); }
+.ddg-window { width: min(820px, 100%); }
+
+.ddg-opts { margin: 8px 0; }
+.ddg-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 6px 0; }
+.ddg-check input { margin-top: 3px; }
+
+/* Party */
+.ddg-party { display: flex; flex-wrap: wrap; gap: 8px; }
+.ddg-member { display: flex; gap: 8px; align-items: center; flex: 1 1 200px; padding: 6px 8px; background: var(--dcb-card); border: 1px solid var(--dcb-border); border-radius: 10px; min-width: 0; }
+.ddg-member-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ddg-member-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Map + room */
+.ddg-main { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.ddg-map { display: grid; width: 330px; max-width: 100%; flex: 0 0 auto; padding: 10px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--dcb-border); border-radius: 12px; align-items: stretch; }
+.ddg-side { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.ddg-room { position: relative; display: flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1; padding: 0; border-radius: 9px; border: 1px solid var(--dcb-border); background: var(--dcb-card); color: var(--dcb-text); cursor: default; min-width: 0; }
+.ddg-room.is-unknown { opacity: 0.55; border-style: dashed; }
+.ddg-room.is-reachable { cursor: pointer; border-color: var(--dcb-accent); opacity: 1; }
+.ddg-room.is-reachable:hover { background: var(--dcb-card-hover); }
+.ddg-room.is-here { background: rgba(255, 255, 255, 0.14); border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); }
+.ddg-room.is-cleared { filter: grayscale(0.8); opacity: 0.7; }
+.ddg-link { background: var(--dcb-border); align-self: center; justify-self: center; }
+.ddg-link.is-h { width: 100%; height: 3px; }
+.ddg-link.is-v { height: 100%; width: 3px; }
+
+.ddg-room-card { padding: 12px; border: 1px solid var(--dcb-border); border-radius: 12px; background: var(--dcb-card); display: flex; flex-direction: column; gap: 8px; }
+.ddg-room-card > header { display: flex; gap: 10px; align-items: center; }
+.ddg-room-card > header div { display: flex; flex-direction: column; }
+.ddg-room-card > header small { color: var(--dcb-muted); font-size: 11px; }
+.ddg-room-icon { font-size: 26px; }
+.ddg-desc, .ddg-trap { margin: 0; font-size: 13px; }
+.ddg-foes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ddg-foes li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ddg-foes .dcb-avatar { width: 26px; height: 26px; font-size: 15px; }
+.ddg-whos { display: flex; flex-wrap: wrap; gap: 6px; }
+.ddg-who { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 5px; border-radius: 999px; border: 1px solid var(--dcb-border); background: var(--dcb-card); color: var(--dcb-text); cursor: pointer; font-size: 13px; min-height: 36px; }
+.ddg-who:hover:not(:disabled) { background: var(--dcb-card-hover); border-color: var(--dcb-accent); }
+.ddg-who:disabled { opacity: 0.4; cursor: not-allowed; }
+.ddg-who .dcb-avatar { width: 26px; height: 26px; font-size: 11px; }
+.ddg-who small { color: var(--dcb-muted); }
+.ddg-actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.ddg-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+
+.ddg-notice { margin: 0; padding: 8px 10px; border-radius: 9px; font-size: 13px; background: var(--dcb-card); border: 1px solid var(--dcb-border); }
+.ddg-notice.is-good { border-color: var(--dcb-hp); }
+.ddg-notice.is-bad { border-color: var(--dcb-hp-low); }
+.ddg-notice.is-warn { border-color: #e0a63a; }
+
+.ddg-log { flex: 0 0 auto; min-height: 64px; list-style: none; margin: 0; padding: 8px 10px; max-height: 150px; overflow-y: auto; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--dcb-border); border-radius: 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
+.ddg-log li.is-highlight { color: #fff; font-weight: 600; }
+.ddg-log li.is-fight { color: #ff9ca0; }
+.ddg-log li.is-rest { color: #8be0b4; }
+.ddg-log li.is-move, .ddg-log li.is-info { color: var(--dcb-muted); }
+.dcb-end .ddg-log { max-height: 220px; width: 100%; align-self: stretch; }
+
+@media (max-width: 640px) {
+    .ddg-window { width: 100%; }
+    .ddg-map { width: 100%; }
+    .ddg-side { flex-basis: 100%; }
+}
