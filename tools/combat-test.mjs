@@ -569,5 +569,105 @@ ok(C.guessProfile('ability', 'Power strike', '', {}).type === 'damage', 'guess: 
     }
 }
 
+// ── new statuses ──
+{
+    const has = (c, id) => c.statuses.some(x => x.id === id);
+    const give = (c, id, turns = 3) => c.statuses.push({ id, turns });
+    const atk = act('hit', { type: 'damage', stat: 'str', target: 'enemy' });
+    const mag = act('bolt', { type: 'damage', stat: 'int', target: 'enemy' });
+    const spell = act('spark', { type: 'damage', stat: 'int', target: 'enemy' }, { kind: 'spell', manaCost: 5 });
+    ok(C.STATUS_IDS.length === 23 && C.STATUS_IDS.every(id => C.statusInfo(id).text.length > 10), 'twenty-three statuses, all explained');
+    // blind, haste, evade
+    const a = hero('A'), d = foe('D');
+    const base = C.hitChance(a, d);
+    give(a, 'blind'); ok(Math.abs(C.hitChance(a, d) - (base - 0.30)) < 1e-9, 'blind: -30% to hit');
+    a.statuses = []; give(a, 'haste'); give(d, 'evade');
+    ok(Math.abs(C.hitChance(a, d) - (base + 0.08 - 0.25)) < 1e-9, 'haste and evade stack on hit chance');
+    d.statuses = []; give(d, 'haste'); ok(Math.abs(C.hitChance(a, d) - (base + 0.08 - 0.10)) < 1e-9, 'a hasted target is harder to hit');
+    // crit
+    const x = hero('X'), y = foe('Y');
+    give(x, 'focus'); give(y, 'sleep');
+    ok(Math.abs(C.critChanceOf(x, y) - (0.05 + 0.15 + 0.25)) < 1e-9, 'focus and a sleeping target raise critical chance');
+    // ward
+    const w = foe('W'); const h = hero('H', {}, [atk, mag]);
+    const before = C.damageAgainst(h, mag, w), physBefore = C.damageAgainst(h, atk, w);
+    give(w, 'ward');
+    ok(C.damageAgainst(h, mag, w) < before * 0.7 && C.damageAgainst(h, atk, w) === physBefore, 'ward cuts magic, not physical');
+    // rage
+    const r = hero('R', {}, [atk]); const n = foe('N'); const dn = C.damageAgainst(r, atk, n);
+    give(r, 'rage'); ok(C.damageAgainst(r, atk, n) > dn * 1.3, 'rage: more damage dealt');
+    const rb = foe('RB'); const taken = C.damageAgainst(h, atk, rb); give(rb, 'rage');
+    ok(C.damageAgainst(h, atk, rb) > taken * 1.25, 'rage: more damage taken');
+    // terror
+    const t = hero('T', {}, [atk]); const dt = C.damageAgainst(t, atk, n); give(t, 'terror');
+    ok(C.damageAgainst(t, atk, n) < dt * 0.8, 'terror: less damage');
+    ok(prof({ type: 'damage', stat: 'str', status: 'terror' }).status === undefined, 'terror cannot ride on an attack');
+    ok(prof({ type: 'status', status: 'terror' }).status === 'terror', 'terror works as a dedicated skill');
+    // curse
+    const heal = act('mend', { type: 'heal', stat: 'wis', target: 'ally' });
+    const c1 = hero('C1', {}, [heal]); const c2 = hero('C2'); const full = C.healAmount(c1, heal, c2); give(c2, 'curse');
+    ok(C.healAmount(c1, heal, c2) <= Math.round(full / 2) + 1, 'curse halves healing');
+    // silence
+    const sil = hero('Si', {}, [spell, atk]); give(sil, 'silence');
+    ok(!C.canUse(sil, spell).ok && C.canUse(sil, spell).reason === 'Silenced' && C.canUse(sil, sil.actions[0]).ok, 'silence blocks spells, not the basic attack');
+    // purify
+    {
+        const pu = foe('Pu'); give(pu, 'purify');
+        const s1 = fight([hero('Hh', {}, [act('blind', { type: 'status', status: 'blind', target: 'enemy' })]), pu], 9);
+        const ev = []; turnOf(s1, 'Hh');
+        for (let i = 0; i < 5; i++) { turnOf(s1, 'Hh'); C.performAction(s1, 'Hh', 'blind', 'Pu'); }
+        ok(!has(pu, 'blind'), 'purify: immune to harmful statuses');
+        const s2 = fight([hero('Hi', {}, [act('boost', { type: 'status', status: 'rage', target: 'enemy' })]), foe('Pv')], 9);
+        const pv = s2.combatants.find(c => c.id === 'Pv'); give(pv, 'purify');
+        turnOf(s2, 'Hi'); C.performAction(s2, 'Hi', 'boost', 'Pv');
+        ok(has(pv, 'rage'), 'purify does not block good statuses');
+    }
+    // sleep: skips turns, wakes on damage, not on poison
+    {
+        const sl = foe('Sl'); const s3 = fight([hero('Hs', {}, [atk]), sl], 11);
+        give(sl, 'sleep', 3);
+        const idx = s3.order.indexOf('Sl');
+        s3.turn = idx;
+        turnOf(s3, 'Hs');
+        C.performAction(s3, 'Hs', 'basic', 'Sl');
+        ok(sl.down || !has(sl, 'sleep') || sl.statuses.length === 0, 'sleep: damage wakes the sleeper (or a miss left it asleep)');
+    }
+    {
+        const sl = foe('Sl2'); give(sl, 'sleep', 3); give(sl, 'poison', 3);
+        const s4 = fight([hero('Ht', {}), sl], 12);
+        s4.order = ['Sl2', 'Ht']; s4.turn = 1; s4.round = 1;
+        C.advance(s4); // Ht's turn ends, Sl2's begins: poison ticks, but it keeps sleeping and loses the turn
+        ok(has(sl, 'sleep') || sl.down, 'sleep: poison does not wake the sleeper');
+        ok(s4.log.some(e => e.type === 'skip' && /asleep/.test(e.text)), 'sleep: loses the turn');
+    }
+    // freeze: skips once, fire thaws
+    {
+        const fz = foe('Fz'); const s5 = fight([hero('Hf', {}, [act('flame', { type: 'damage', stat: 'int', element: 'fire', target: 'enemy' })]), fz], 14);
+        give(fz, 'freeze', 1);
+        let thawed = false;
+        for (let i = 0; i < 8 && !thawed; i++) { turnOf(s5, 'Hf'); C.performAction(s5, 'Hf', 'flame', 'Fz'); thawed = !has(fz, 'freeze'); }
+        ok(thawed, 'freeze: fire thaws it');
+        const f2 = foe('F2'); const s6 = fight([hero('Hg', {}), f2], 15);
+        s6.order = ['Hg', 'F2']; s6.turn = 0; give(f2, 'freeze', 1);
+        C.advance(s6);
+        ok(s6.log.some(e => e.type === 'skip' && /frozen/.test(e.text)) && !has(f2, 'freeze') && f2.stunImmune === 2, 'freeze: loses one turn, then is immune for two');
+        ok(C.upcomingTurns(Object.assign(fight([hero('Hh2'), foe('F3')], 3)), 4).length === 4, 'turn bar still works');
+    }
+    // thorns
+    {
+        const th = foe('Th'); give(th, 'thorns', 3); const hh = hero('Hp', {}, [atk]);
+        const s7 = fight([hh, th], 16); const hp0 = hh.hp; let hit = false;
+        for (let i = 0; i < 8 && !hit; i++) { turnOf(s7, 'Hp'); const ev = C.performAction(s7, 'Hp', 'basic', 'Th'); hit = ev.some(e => e.type === 'damage' && e.target === 'Th'); }
+        ok(hit && hh.hp < hp0, 'thorns: the attacker is hurt');
+    }
+    // confusion
+    {
+        const cf = hero('Cf', {}, [atk]); give(cf, 'confuse', 5); const al = hero('Al'); const en = foe('En');
+        const s8 = fight([cf, al, en], 17); const seen = new Set();
+        for (let i = 0; i < 40; i++) { s8.phase = 'active'; turnOf(s8, 'Cf'); const ev = C.performAction(s8, 'Cf', 'basic', 'En'); for (const e of ev) if (e.target) seen.add(e.target); en.hp = en.maxHp; al.hp = al.maxHp; en.down = al.down = false; cf.hp = cf.maxHp; cf.down = false; }
+        ok(seen.has('Al'), 'confusion: sometimes hits a friend');
+    }
+}
+
 console.log(`combat model: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

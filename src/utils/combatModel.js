@@ -34,6 +34,8 @@ export const TUNING = {
     hpBase: 30, hpPerCon: 4, hpPerLevel: 5,
     hitBase: 0.75, hitPerDex: 0.015, hitMin: 0.10, hitMax: 0.95, spellAccuracy: 0.10,
     critChance: 0.05, critMult: 1.5,
+    blindHit: 0.30, hasteHitAtk: 0.08, hasteHitDef: 0.10, evadeHit: 0.25, focusCrit: 0.15, sleepCrit: 0.25,
+    wardMult: 0.6, thornsPct: 0.25, rageAtk: 1.4, rageIn: 1.33, terrorMult: 0.75, curseHeal: 0.5,
     dmgBase: 5, dmgPerAttr: 1.2,
     varMin: 0.85, varMax: 1.15,
     defPerCon: 0.5, defK: 20, magicArmorShare: 0.5,
@@ -84,8 +86,24 @@ export const STATUSES = {
     shield: { icon: '🛡️', name: 'Shielded', bad: false },
     empower: { icon: '⬆️', name: 'Empowered', bad: false },
     regen: { icon: '💚', name: 'Regenerating', bad: false },
+    blind: { icon: '🕶️', name: 'Blinded', bad: true },
+    silence: { icon: '🤐', name: 'Silenced', bad: true },
+    sleep: { icon: '😴', name: 'Asleep', bad: true },
+    confuse: { icon: '😵', name: 'Confused', bad: true },
+    curse: { icon: '🧿', name: 'Cursed', bad: true },
+    freeze: { icon: '🧊', name: 'Frozen', bad: true },
+    terror: { icon: '😱', name: 'Terrified', bad: true },
+    haste: { icon: '💨', name: 'Hasted', bad: false },
+    evade: { icon: '🌀', name: 'Evasive', bad: false },
+    focus: { icon: '🎯', name: 'Focused', bad: false },
+    ward: { icon: '🔮', name: 'Warded', bad: false },
+    thorns: { icon: '🌵', name: 'Thorned', bad: false },
+    purify: { icon: '🕊️', name: 'Purified', bad: false },
+    rage: { icon: '😡', name: 'Enraged', bad: false },
 };
 export const STATUS_IDS = Object.keys(STATUSES);
+/** Statuses that make a fighter lose turns. */
+const SKIP_STATUSES = ['stun', 'freeze', 'sleep'];
 /** What a hand-set status may last (turns of the one who carries it) and its lowest chance. */
 export const MAX_STATUS_TURNS = 5;
 export const MIN_STATUS_CHANCE = 0.1;
@@ -190,6 +208,7 @@ export function normalizeProfile(raw, attributeIds = ATTRIBUTE_IDS) {
         const chance = Number(raw.statusChance);
         if (t === 'damage' && Number.isFinite(chance) && chance > 0) out.statusChance = clamp(Math.round((chance > 1 ? chance / 100 : chance) * 20) / 20, MIN_STATUS_CHANCE, 1);
     }
+    if (t === 'damage' && out.status === 'terror') { delete out.status; delete out.statusTurns; delete out.statusChance; }
     if (t === 'status' && !status) return null;
     const element = String(raw.element ?? '').toLowerCase().trim();
     if (ELEMENT_IDS.includes(element) && (t === 'damage' || t === 'gear')) out.element = element;
@@ -242,9 +261,21 @@ const KEYWORDS = [
     { re: /\b(antidote|remedy|purify|cleanse|antidoto|purifica)/i, p: { type: 'cure', stat: 'none', target: 'ally' } },
     { re: /\b(mana|ether|elixir of mana|energy drink|eter)/i, p: { type: 'mana', stat: 'none', target: 'ally' } },
     { re: /\b(shield|barrier|protect|ward|guard up|scudo|barriera|proteggi)/i, p: { type: 'status', status: 'shield', stat: 'none', target: 'ally' } },
-    { re: /\b(haste|rage|bless|empower|inspire|furia|benedi|potenzia|ispira)/i, p: { type: 'status', status: 'empower', stat: 'none', target: 'ally' } },
-    { re: /\b(stun|paralyz|freeze|sleep|stordi|paralizz|congela|addorment)/i, p: { type: 'status', status: 'stun', stat: 'none', target: 'enemy' } },
-    { re: /\b(weaken|curse|hex|debilit|maledi)/i, p: { type: 'status', status: 'weaken', stat: 'none', target: 'enemy' } },
+    { re: /\b(haste|quicken|speed|accelera|veloc)/i, p: { type: 'status', status: 'haste', stat: 'none', target: 'ally' } },
+    { re: /\b(rage|berserk|frenzy|furia)/i, p: { type: 'status', status: 'rage', stat: 'none', target: 'self' } },
+    { re: /\b(thorn|spine|spike)/i, p: { type: 'status', status: 'thorns', stat: 'none', target: 'self' } },
+    { re: /\b(evasion|dodge|blur|schiva)/i, p: { type: 'status', status: 'evade', stat: 'none', target: 'self' } },
+    { re: /\b(focus|concentrat)/i, p: { type: 'status', status: 'focus', stat: 'none', target: 'self' } },
+    { re: /\b(bless|empower|inspire|benedi|potenzia|ispira)/i, p: { type: 'status', status: 'empower', stat: 'none', target: 'ally' } },
+    { re: /\b(freeze|frozen|congela|gela)/i, p: { type: 'status', status: 'freeze', stat: 'none', target: 'enemy' } },
+    { re: /\b(sleep|lullaby|addorment|ninna)/i, p: { type: 'status', status: 'sleep', stat: 'none', target: 'enemy' } },
+    { re: /\b(blind|flash|accec)/i, p: { type: 'status', status: 'blind', stat: 'none', target: 'enemy' } },
+    { re: /\b(silence|mute|silenzi)/i, p: { type: 'status', status: 'silence', stat: 'none', target: 'enemy' } },
+    { re: /\b(confus|bewilder|daze)/i, p: { type: 'status', status: 'confuse', stat: 'none', target: 'enemy' } },
+    { re: /\b(terror|scare|fear|spavent|paura)/i, p: { type: 'status', status: 'terror', stat: 'none', target: 'enemy' } },
+    { re: /\b(curse|hex|maledi|malocchio)/i, p: { type: 'status', status: 'curse', stat: 'none', target: 'enemy' } },
+    { re: /\b(stun|paralyz|stordi|paralizz)/i, p: { type: 'status', status: 'stun', stat: 'none', target: 'enemy' } },
+    { re: /\b(weaken|debilit)/i, p: { type: 'status', status: 'weaken', stat: 'none', target: 'enemy' } },
     { re: /\b(poison|venom|veleno|velen)/i, p: { type: 'damage', status: 'poison', stat: 'dex', target: 'enemy' } },
     { re: /\b(fire|flame|burn|inferno|blaze|explosion|fuoco|fiamma|brucia|esplosion)/i, p: { type: 'damage', status: 'burn', stat: 'int', target: 'enemy' } },
     { re: /\b(bleed|slash|rend|sanguin|taglio|squarcia)/i, p: { type: 'damage', status: 'bleed', stat: 'str', target: 'enemy' } },
@@ -495,6 +526,20 @@ export function statusInfo(id) {
         shield: `Takes ${pctText(1 - t.shieldMult)} less damage.`,
         empower: `Deals ${pctText(t.empowerMult - 1)} more damage.`,
         regen: `Recovers ${pctText(t.regenPct)} of its maximum HP at the start of each of its turns.`,
+        blind: `${pctText(t.blindHit)} less chance to hit with anything.`,
+        silence: 'Cannot cast spells or use skills that cost Mana: only the basic attack, Defend and items.',
+        sleep: `Loses its turns while it sleeps, and wakes up at the first damage it takes (not from poison, burns or bleeding). Hits against it are much more likely to be critical (+${pctText(t.sleepCrit)}). Bosses may resist it.`,
+        confuse: 'Its single-target attacks hit a random fighter, friend or foe, instead of the one chosen.',
+        curse: `Healing and regeneration it receives are ${pctText(1 - t.curseHeal)} weaker.`,
+        freeze: 'Loses its next turn, like a stun (and then cannot be stunned or frozen again for two turns). Fire damage thaws it at once. Bosses may resist it.',
+        terror: `Deals ${pctText(1 - t.terrorMult)} less damage. Can only be inflicted by a dedicated skill, never as the side effect of an attack.`,
+        haste: `Hits ${pctText(t.hasteHitAtk)} more often and is hit ${pctText(t.hasteHitDef)} less often. The order of turns does not change.`,
+        evade: `${pctText(t.evadeHit)} less chance to be hit.`,
+        focus: `+${pctText(t.focusCrit)} chance of a critical hit.`,
+        ward: `Takes ${pctText(1 - t.wardMult)} less damage from spells and elements; physical blows are not reduced.`,
+        thorns: `Whoever hits it with a physical attack takes ${pctText(t.thornsPct)} of the damage back.`,
+        purify: 'Immune to harmful statuses while it lasts.',
+        rage: `Deals ${pctText(t.rageAtk - 1)} more damage, but takes ${pctText(t.rageIn - 1)} more.`,
     }[id] || '';
     return { id, name: d.name, icon: d.icon, bad: !!d.bad, text };
 }
@@ -523,7 +568,7 @@ export function upcomingTurns(state, count = 8) {
         const c = byId.get(order[idx]);
         const first = out.length === 0;
         if (c && !c.down) {
-            const stunned = hasStatus(c, 'stun') && !stunSeen.has(c.id);
+            const stunned = SKIP_STATUSES.some(id => hasStatus(c, id)) && !stunSeen.has(c.id);
             if (stunned) stunSeen.add(c.id);
             out.push({ id: c.id, name: c.name, side: c.side, icon: c.icon, isUser: !!c.isUser, round, current: first, stunned, newRound: idx === 0 && !first });
         }
@@ -545,12 +590,17 @@ export function statusTurnsOf(p) {
 function applyStatus(state, events, source, target, id, turns = TUNING.statusTurns) {
     const def = STATUSES[id];
     if (!def || target.down) return false;
-    if (id === 'stun') {
-        if (target.stunImmune > 0 || (target.tier === 'boss' && nextRandom(state) < 0.5)) {
-            push(state, events, { type: 'resist', actor: source?.id, target: target.id, text: `${target.name} resists being stunned.` });
+    if (def.bad && hasStatus(target, 'purify')) {
+        push(state, events, { type: 'resist', actor: source?.id, target: target.id, text: `${target.name} is purified and shrugs off ${def.name.toLowerCase()}. 🕊️` });
+        return false;
+    }
+    if (SKIP_STATUSES.includes(id)) {
+        const boss = target.tier === 'boss' && nextRandom(state) < 0.5;
+        if (((id === 'stun' || id === 'freeze') && target.stunImmune > 0) || boss) {
+            push(state, events, { type: 'resist', actor: source?.id, target: target.id, text: `${target.name} resists ${def.name.toLowerCase()}.` });
             return false;
         }
-        turns = 1;
+        if (id !== 'sleep') turns = 1;
     }
     const cur = target.statuses.find(s => s.id === id);
     if (cur) cur.turns = Math.max(cur.turns, turns);
@@ -563,6 +613,8 @@ function atkMult(c) {
     let m = 1;
     if (hasStatus(c, 'weaken')) m *= TUNING.weakenMult;
     if (hasStatus(c, 'empower')) m *= TUNING.empowerMult;
+    if (hasStatus(c, 'rage')) m *= TUNING.rageAtk;
+    if (hasStatus(c, 'terror')) m *= TUNING.terrorMult;
     return m;
 }
 
@@ -571,12 +623,17 @@ function inMult(c) {
     if (c.guard) m *= TUNING.guardMult;
     if (hasStatus(c, 'shield')) m *= TUNING.shieldMult;
     if (hasStatus(c, 'vulnerable')) m *= TUNING.vulnerableMult;
+    if (hasStatus(c, 'rage')) m *= TUNING.rageIn;
     return m;
 }
 
 function takeDamage(state, events, c, amount, text, extra = {}) {
     c.hp = Math.max(0, c.hp - amount);
     push(state, events, { type: 'damage', target: c.id, amount, text, ...extra });
+    if (!extra.dot && amount > 0 && c.hp > 0 && hasStatus(c, 'sleep')) {
+        c.statuses = c.statuses.filter(s => s.id !== 'sleep');
+        push(state, events, { type: 'info', text: `${c.name} wakes up! 😴` });
+    }
     if (c.hp <= 0 && !c.down) {
         c.down = true;
         c.statuses = [];
@@ -590,8 +647,23 @@ function takeDamage(state, events, c, amount, text, extra = {}) {
 export function hitChance(attacker, defender, profile = null) {
     let p = TUNING.hitBase + (attrValue(attacker, 'dex') - attrValue(defender, 'dex')) * TUNING.hitPerDex;
     if (profile && profile.stat && !PHYSICAL.has(profile.stat) && profile.stat !== 'none') p += TUNING.spellAccuracy;
+    if (hasStatus(attacker, 'blind')) p -= TUNING.blindHit;
+    if (hasStatus(attacker, 'haste')) p += TUNING.hasteHitAtk;
+    if (hasStatus(defender, 'haste')) p -= TUNING.hasteHitDef;
+    if (hasStatus(defender, 'evade')) p -= TUNING.evadeHit;
     return clamp(p, TUNING.hitMin, TUNING.hitMax);
 }
+
+/** Chance of a critical hit against this target. */
+export function critChanceOf(attacker, defender) {
+    let c = TUNING.critChance;
+    if (hasStatus(attacker, 'focus')) c += TUNING.focusCrit;
+    if (defender && hasStatus(defender, 'sleep')) c += TUNING.sleepCrit;
+    return Math.min(0.9, c);
+}
+
+/** Does this move count as magic (a spell or an element) for Warded? */
+const isMagic = (p) => !!p.element || (!!p.stat && p.stat !== 'none' && !PHYSICAL.has(p.stat));
 
 /** Damage before the defender's armour; `roll` is the variation factor. */
 function rawDamage(attacker, action, roll, aoe) {
@@ -633,6 +705,7 @@ export function damageOutcome(attacker, action, defender, { roll = 1, crit = fal
     let d = rawDamage(attacker, action, roll, aoe) * (crit ? TUNING.critMult : 1);
     const def = defenceOf(defender, p);
     d = d * (1 - def / (def + TUNING.defK)) * inMult(defender);
+    if (hasStatus(defender, 'ward') && isMagic(p)) d *= TUNING.wardMult;
     const aff = element ? defender.affinities?.[element] : null;
     if (aff === 'immune') return { amount: 0, kind: 'immune', element };
     if (aff === 'absorb') return { amount: Math.max(1, Math.round(d * TUNING.absorbPct)), kind: 'absorb', element };
@@ -650,8 +723,9 @@ export function damageAgainst(attacker, action, defender, opts = {}) {
 export function healAmount(actor, action, target) {
     const p = action.profile;
     const power = powerOf(p);
-    if (action.kind === 'item' || p.stat === 'none') return Math.max(1, Math.round(target.maxHp * TUNING.itemHealPct[power]));
-    return Math.max(1, Math.round((TUNING.healBase + attrValue(actor, p.stat) * TUNING.healPerAttr) * TUNING.powerMult[power] * TUNING.healMult));
+    const cursed = target && hasStatus(target, 'curse') ? TUNING.curseHeal : 1;
+    if (action.kind === 'item' || p.stat === 'none') return Math.max(1, Math.round(target.maxHp * TUNING.itemHealPct[power] * cursed));
+    return Math.max(1, Math.round((TUNING.healBase + attrValue(actor, p.stat) * TUNING.healPerAttr) * TUNING.powerMult[power] * TUNING.healMult * cursed));
 }
 
 /** What the action would do, for a tooltip: { min, max, hit } or { amount }. */
@@ -681,6 +755,7 @@ export function canUse(actor, action) {
     if (!actor || !action) return { ok: false, reason: 'No such action' };
     if (actor.down) return { ok: false, reason: 'Down' };
     if (action.kind === 'item' && !(action.qty > 0)) return { ok: false, reason: 'None left' };
+    if (hasStatus(actor, 'silence') && action.kind !== 'basic' && action.kind !== 'item' && (action.kind === 'spell' || action.manaCost > 0)) return { ok: false, reason: 'Silenced' };
     if (action.manaCost > 0 && actor.mana !== null && actor.mana < action.manaCost) return { ok: false, reason: 'Not enough Mana' };
     const cd = actor.cooldowns[action.id] || 0;
     if (cd > 0) return { ok: false, reason: `Ready in ${cd} turn${cd === 1 ? '' : 's'}` };
@@ -732,7 +807,15 @@ export function performAction(state, actorId, actionId, targetId = null) {
         push(state, events, { type: 'info', text: `${actor?.name || 'Someone'} cannot do that: ${check.reason}.` });
         return events;
     }
-    const targets = resolveTargets(state, actor, action, targetId);
+    let targets = resolveTargets(state, actor, action, targetId);
+    if (hasStatus(actor, 'confuse') && action.profile.target === 'enemy' && action.profile.type === 'damage') {
+        const pool = state.combatants.filter(c => !c.down && c.id !== actor.id);
+        if (pool.length) {
+            const pick = pool[Math.floor(nextRandom(state) * pool.length)];
+            targets = [pick];
+            push(state, events, { type: 'info', actor: actor.id, text: `${actor.name} is confused and turns on ${pick.name}! 😵` });
+        }
+    }
     if (!targets.length) {
         push(state, events, { type: 'info', text: 'There is no valid target.' });
         return events;
@@ -749,7 +832,7 @@ export function performAction(state, actorId, actionId, targetId = null) {
                 push(state, events, { type: 'miss', actor: actor.id, target: t.id, text: `${t.name} avoids it.` });
                 continue;
             }
-            const crit = nextRandom(state) < TUNING.critChance;
+            const crit = nextRandom(state) < critChanceOf(actor, t);
             const roll = TUNING.varMin + nextRandom(state) * (TUNING.varMax - TUNING.varMin);
             const o = damageOutcome(actor, action, t, { roll, crit, aoe });
             const el = o.element ? ` ${ELEMENTS[o.element].icon}` : '';
@@ -768,8 +851,17 @@ export function performAction(state, actorId, actionId, targetId = null) {
                 continue;
             }
             const dmg = o.amount;
+            const wasFrozen = hasStatus(t, 'freeze');
             const note = o.kind === 'weak' ? ' Weak point!' : o.kind === 'resist' ? ' Resisted.' : '';
             takeDamage(state, events, t, dmg, `${t.name} takes ${dmg}${el} damage${crit ? ' (critical!)' : ''}.${note}`, { actor: actor.id, crit, affinity: o.kind });
+            if (o.element === 'fire' && wasFrozen && !t.down) {
+                t.statuses = t.statuses.filter(s => s.id !== 'freeze');
+                push(state, events, { type: 'info', target: t.id, text: `${t.name} thaws! 🔥` });
+            }
+            if (hasStatus(t, 'thorns') && PHYSICAL.has(p.stat) && !actor.down && t.id !== actor.id) {
+                const back = Math.max(1, Math.round(dmg * TUNING.thornsPct));
+                takeDamage(state, events, actor, back, `${actor.name} is pricked for ${back} damage 🌵`, { actor: t.id });
+            }
             if (p.status && !t.down && nextRandom(state) < statusChanceOf(p)) applyStatus(state, events, actor, t, p.status, statusTurnsOf(p));
         }
     } else if (p.type === 'heal') {
@@ -883,16 +975,20 @@ function beginTurn(state, events) {
                 const dmg = Math.max(2, Math.round(actor.maxHp * TUNING.dotPct[s.id]));
                 takeDamage(state, events, actor, dmg, `${actor.name} suffers ${dmg} damage from ${def.name.toLowerCase()} ${def.icon}`, { dot: true });
             } else if (s.id === 'regen') {
-                const heal = Math.min(Math.max(2, Math.round(actor.maxHp * TUNING.regenPct)), actor.maxHp - actor.hp);
+                const heal = Math.min(Math.max(2, Math.round(actor.maxHp * TUNING.regenPct * (hasStatus(actor, 'curse') ? TUNING.curseHeal : 1))), actor.maxHp - actor.hp);
                 if (heal > 0) { actor.hp += heal; push(state, events, { type: 'heal', target: actor.id, amount: heal, text: `${actor.name} regenerates ${heal} HP 💚` }); }
             }
         }
         if (checkEnd(state, events)) return;
         if (actor.down) { stepIndex(state, events); continue; }
-        if (hasStatus(actor, 'stun')) {
-            push(state, events, { type: 'skip', actor: actor.id, text: `${actor.name} is stunned and loses the turn 💫` });
-            actor.statuses = actor.statuses.filter(s => s.id !== 'stun');
-            actor.stunImmune = 2;
+        const skip = SKIP_STATUSES.find(id => hasStatus(actor, id));
+        if (skip) {
+            const d = STATUSES[skip];
+            push(state, events, { type: 'skip', actor: actor.id, text: `${actor.name} is ${d.name.toLowerCase()} and loses the turn ${d.icon}` });
+            if (skip !== 'sleep') {
+                actor.statuses = actor.statuses.filter(s => s.id !== skip);
+                actor.stunImmune = 2;
+            }
             tickStatuses(actor);
             stepIndex(state, events);
             continue;
