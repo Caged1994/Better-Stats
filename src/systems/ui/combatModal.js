@@ -259,7 +259,7 @@ function cardHtml(c, actor) {
         ${avatarHtml(c)}
         <div class="dcb-card-main">
             <div class="dcb-card-name"><span>${escapeHtml(c.name)}</span><button type="button" class="dcb-info" data-action="inspect" data-id="${escapeHtml(c.id)}" title="Stats and abilities" aria-label="Inspect ${escapeHtml(c.name)}"><i class="fa-solid fa-circle-info"></i></button></div>
-            <div class="dcb-card-meta">${tier}<span class="dcb-lv">Lv ${c.level}</span></div>
+            <div class="dcb-card-meta">${tier}<span class="dcb-lv">Lv ${c.level}</span>${c.armored ? '<span class="dcb-armor-tag" title="Armoured: plain physical attacks do nothing. Needs Penetration, an element or magic.">🛡️ Armoured</span>' : ''}</div>
             ${barHtml('is-hp', c.hp, c.maxHp, c.down ? 'Down' : `${c.hp} / ${c.maxHp}`)}
             ${c.mana !== null && c.side === 'party' ? barHtml('is-mana', c.mana, 100, `Mana ${c.mana}`) : ''}
             ${statusesHtml(c)}
@@ -279,13 +279,28 @@ function actionButton(actor, a) {
         <span class="dcb-act-icon">${escapeHtml(a.icon || '✨')}</span><span class="dcb-act-name">${escapeHtml(a.label)}</span>${bits.join('')}</button>`;
 }
 
+const KIND_NOTE = {
+    weak: 'weak point, extra damage', resist: 'resisted, half damage', immune: 'immune, no damage',
+    bounce: 'armour turns it aside — needs Penetration, an element or magic',
+};
+/** Words for how a target answers to a damage estimate ("" when it is nothing special). */
+function kindNote(est) {
+    if (!est) return '';
+    if (est.kind === 'absorb') return `absorbed, heals it ${est.heals.min}–${est.heals.max}`;
+    return KIND_NOTE[est.kind] || '';
+}
+function elementTag(p) {
+    return p.element ? `${M.ELEMENTS[p.element].icon} ${M.ELEMENTS[p.element].name}` : '';
+}
+
 function describeAction(actor, a, check) {
     const p = a.profile;
     const parts = [];
     const foe = M.alive(fight, actor.side === 'party' ? 'enemy' : 'party')[0];
     if (p.type === 'damage') {
         const est = foe ? M.estimateAction(actor, a, foe) : null;
-        parts.push(est ? `Damage about ${est.min}–${est.max}, ${est.hit}% to hit` : 'Damage');
+        parts.push(est ? `${elementTag(p) ? elementTag(p) + ' damage' : 'Damage'} about ${est.min}–${est.max}, ${est.hit}% to hit${kindNote(est) ? ` (${kindNote(est)})` : ''}` : 'Damage');
+        if (p.pierce) parts.push('Penetration');
         if (p.target === 'enemies') parts.push('hits every enemy');
     } else if (p.type === 'heal') {
         const t = M.alive(fight, actor.side)[0] || actor;
@@ -345,7 +360,8 @@ function actionDetail(c, a, foe) {
     let what = '';
     if (p.type === 'damage') {
         const est = foe ? M.estimateAction(c, a, foe) : null;
-        what = est ? `Damage ${est.min}–${est.max} to ${escapeHtml(foe.name)}, ${est.hit}% to hit` : 'Damage';
+        what = est ? `${elementTag(p) ? elementTag(p) + ' damage' : 'Damage'} ${est.min}–${est.max} to ${escapeHtml(foe.name)}, ${est.hit}% to hit${kindNote(est) ? ` (${kindNote(est)})` : ''}` : 'Damage';
+        if (p.pierce) what += ', Penetration';
     } else if (p.type === 'heal') what = 'Heals';
     else if (p.type === 'status') what = M.STATUSES[p.status]?.name || 'Status';
     else if (p.type === 'mana') what = 'Restores Mana';
@@ -377,7 +393,12 @@ function inspectHtml() {
         c.mana !== null ? `💧 ${c.mana}` : '',
         `🛡️ Armor ${c.armor} — blocks ${Math.round(red.physical * 100)}% of physical, ${Math.round(red.magic * 100)}% of magic`,
         c.atkBonus > 0 ? `⚔️ Weapon bonus +${c.atkBonus}` : '',
+        c.armored ? '🛡️ Armoured — plain physical attacks bounce off; Penetration, elements and magic get through' : '',
+        c.atkElement ? `${M.ELEMENTS[c.atkElement].icon} Weapon element: ${M.ELEMENTS[c.atkElement].name}` : '',
+        c.atkPierce ? '🗡️ Weapon penetrates armour' : '',
     ].filter(Boolean).map(t => `<li>${t}</li>`).join('');
+    const affs = Object.entries(c.affinities || {}).sort((a, b) => M.AFFINITIES[a[1]].rank - M.AFFINITIES[b[1]].rank)
+        .map(([el, l]) => `<span class="dcb-aff is-${l}" title="${M.AFFINITIES[l].name} ${M.ELEMENTS[el].name}">${M.ELEMENTS[el].icon} ${M.ELEMENTS[el].name} · ${M.AFFINITIES[l].name}</span>`).join('');
     const list = c.actions.map(a => actionDetail(c, a, foe)).join('') || '<li class="dcb-empty">No actions.</li>';
     const sts = (c.statuses || []).map(s => { const i = M.statusInfo(s.id); return i ? `<li class="${i.bad ? 'is-bad' : ''}"><span class="dcb-status${i.bad ? ' is-bad' : ''}">${i.icon}<small>${s.turns}</small></span><div><b>${escapeHtml(i.name)}</b> <small>${s.turns} turn${s.turns === 1 ? '' : 's'} left</small><br><small>${escapeHtml(i.text)}</small></div></li>` : ''; }).join('');
     return `<section class="dcb-inspect ${c.side === 'enemy' ? 'is-enemy' : 'is-party'}">
@@ -386,6 +407,7 @@ function inspectHtml() {
         ${c.description ? `<p class="dcb-ins-desc">${escapeHtml(c.description)}</p>` : ''}
         <div class="dcb-ins-attrs">${attrs}</div>
         <ul class="dcb-ins-stats">${stats}</ul>
+        ${affs ? `<div class="dcb-ins-affs">${affs}</div>` : ''}
         ${sts ? `<ul class="dcb-ins-sts">${sts}</ul>` : ''}
         <h4>Attacks &amp; abilities</h4>
         <ul class="dcb-ins-actions">${list}</ul>

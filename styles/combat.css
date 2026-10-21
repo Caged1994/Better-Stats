@@ -392,3 +392,14 @@
 .dcb-legend { padding: 10px 12px; border: 1px solid var(--dcb-border); border-radius: 12px; background: var(--dcb-card); display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
 .dcb-legend > header { display: flex; align-items: center; justify-content: space-between; }
 .dcb-legend p { margin: 0; }
+
+/* Elements, affinities and armour */
+.dcb-armor-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: rgba(150, 160, 175, 0.25); color: #c5ccd6; white-space: nowrap; }
+.dcb-ins-affs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; flex: 0 0 auto; }
+.dcb-aff { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(150, 160, 175, 0.2); white-space: nowrap; }
+.dcb-aff.is-weak { background: rgba(255, 159, 28, 0.25); color: #ffb84d; }
+.dcb-aff.is-resist { background: rgba(80, 160, 255, 0.22); color: #8fc2ff; }
+.dcb-aff.is-immune { background: rgba(150, 160, 175, 0.35); color: #d4d9e0; }
+.dcb-aff.is-absorb { background: rgba(60, 200, 120, 0.25); color: #7fe0a8; }
+.dcb-log li.is-bounce, .dcb-log li.is-immune { opacity: 0.8; font-style: italic; }
+.dcb-log li.is-absorb { color: #7fe0a8; }

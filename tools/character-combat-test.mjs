@@ -325,6 +325,27 @@ Cb.setCombatNarration(true);
     const key = Cb.buildPartyMember('Mastera', true).combatant.actions.find(x => x.label === 'Old key');
     check('action profile: a plain item can be made usable', key && key.profile.type === 'heal');
     Cb.setActionProfile('Mastera', true, 'item', 'Old key', null);
+    // Elements on gear
+    const swd = Eq.getEquipment('Mastera', true).find(i => i.name === 'Long sword');
+    Cb.setItemGear('Mastera', true, 'Long sword', 5, 2, { element: 'fire', pierce: true, affinities: { ice: 'resist', fire: 'immune' } });
+    const gm = Cb.buildPartyMember('Mastera', true).combatant;
+    check('gear: weapon element and Penetration reach the basic attack', gm.actions[0].profile.element === 'fire' && gm.actions[0].profile.pierce === true, JSON.stringify(gm.actions[0].profile));
+    check('gear: armour affinities reach the fighter', gm.affinities.ice === 'resist' && gm.affinities.fire === 'immune', JSON.stringify(gm.affinities));
+    const gi = Cb.getItemCombat('Mastera', true, swd);
+    check('gear: the form reads them back', gi.element === 'fire' && gi.pierce && gi.affinities.ice === 'resist');
+    check('gear: described in words', /Fire/.test(Cb.describeProfile({ type: 'gear', atk: 5, def: 2, element: 'fire', pierce: true })) && /Penetration/.test(Cb.describeProfile({ type: 'gear', atk: 1, def: 1, pierce: true })));
+    Cb.setItemGear('Mastera', true, 'Long sword', null, null);
+    // Enemy specs: armour and affinities
+    const specs = Cb.normalizeEnemySpecs([
+        { name: 'Knight', tier: 'elite', armored: true, weak: ['fire'], immune: ['holy'] },
+        { name: 'Golem', tier: 'boss', armored: true, immune: ['fire'] },
+        { name: 'Rat', tier: 'minion', armored: true, immune: ['ice'], attacks: [{ name: 'Bite', element: 'Dark' }] },
+    ]);
+    check('specs: affinities and armour are read', specs[0].armored && specs[0].affinities.fire === 'weak' && specs[0].affinities.holy === 'immune');
+    check('specs: only one creature per fight keeps a rare affinity', !Object.values(specs[1].affinities).includes('immune'));
+    check('specs: armour is limited to half of the group', specs.filter(e => e.armored).length === 2 || specs.filter(e => e.armored).length === 1);
+    check('specs: minions lose armour and rare affinities', !specs[2].armored && !Object.keys(specs[2].affinities).length);
+    check('specs: attack elements are kept', specs[2].attacks[0].element === 'dark');
     check('action profile: a status without a status is refused', Cb.setActionProfile('Mastera', true, 'spell', 'Fireball', { type: 'status' }) === false);
 }
 

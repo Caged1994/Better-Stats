@@ -61,6 +61,7 @@ export const TUNING = {
     },
     // Each party member after the first adds this much to enemy hit points.
     hpPerExtraHero: 0.45,
+    weakMult: 1.5, resistMult: 0.5, absorbPct: 0.5,
     affinityWin: 3, affinityFlee: -2,
     maxLog: 300,
 };
@@ -88,6 +89,33 @@ export const STATUS_IDS = Object.keys(STATUSES);
 /** What a hand-set status may last (turns of the one who carries it) and its lowest chance. */
 export const MAX_STATUS_TURNS = 5;
 export const MIN_STATUS_CHANCE = 0.1;
+
+/** The elements. A move or weapon may carry one; creatures and armour answer to them. */
+export const ELEMENTS = {
+    fire: { icon: '🔥', name: 'Fire' },
+    water: { icon: '💧', name: 'Water' },
+    ice: { icon: '❄️', name: 'Ice' },
+    lightning: { icon: '⚡', name: 'Lightning' },
+    earth: { icon: '🪨', name: 'Earth' },
+    dark: { icon: '🌑', name: 'Dark' },
+    holy: { icon: '✨', name: 'Holy' },
+};
+export const ELEMENT_IDS = Object.keys(ELEMENTS);
+/** How a creature (or armour) answers to an element. Weak/resist are common; immune/absorb are rare. */
+export const AFFINITIES = {
+    weak: { name: 'Weak', icon: '⚠️', rank: -1 },
+    resist: { name: 'Resists', icon: '🛡️', rank: 1 },
+    immune: { name: 'Immune', icon: '🚫', rank: 2 },
+    absorb: { name: 'Absorbs', icon: '💚', rank: 3 },
+};
+export const AFFINITY_IDS = Object.keys(AFFINITIES);
+/** What an enemy may carry, by category: [weak+resist each, immune+absorb together, may be armoured]. */
+export const AFFINITY_CAPS = {
+    minion: { common: 1, rare: 0, armor: false },
+    normal: { common: 2, rare: 0, armor: true },
+    elite: { common: 2, rare: 1, armor: true },
+    boss: { common: 2, rare: 1, armor: true },
+};
 
 /** How much each enemy category counts towards how dangerous a fight is. */
 export const THREAT = { minion: 1, normal: 2, elite: 4, boss: 8 };
@@ -161,9 +189,47 @@ export function normalizeProfile(raw, attributeIds = ATTRIBUTE_IDS) {
         if (t === 'damage' && Number.isFinite(chance) && chance > 0) out.statusChance = clamp(Math.round((chance > 1 ? chance / 100 : chance) * 20) / 20, MIN_STATUS_CHANCE, 1);
     }
     if (t === 'status' && !status) return null;
+    const element = String(raw.element ?? '').toLowerCase().trim();
+    if (ELEMENT_IDS.includes(element) && (t === 'damage' || t === 'gear')) out.element = element;
+    if (raw.pierce === true && (t === 'damage' || t === 'gear')) out.pierce = true;
     if (t === 'gear') {
         out.atk = clamp(Math.round(Number(raw.atk) || 0), 0, 15);
         out.def = clamp(Math.round(Number(raw.def) || 0), 0, 15);
+        const aff = normalizeAffinities(raw.affinities);
+        if (Object.keys(aff).length) out.affinities = aff;
+    }
+    return out;
+}
+
+/**
+ * Cleans an affinity table. Accepts { fire: 'weak', … } or { weak: ['fire'], resist: […], … }.
+ * @returns {Object<string,string>} element → 'weak'|'resist'|'immune'|'absorb' (the stronger wins on a clash)
+ */
+export function normalizeAffinities(raw) {
+    const out = {};
+    const put = (el, lvl) => {
+        const e = String(el ?? '').toLowerCase().trim();
+        const l = String(lvl ?? '').toLowerCase().trim();
+        if (!ELEMENT_IDS.includes(e) || !AFFINITY_IDS.includes(l)) return;
+        if (!out[e] || AFFINITIES[l].rank > AFFINITIES[out[e]].rank) out[e] = l;
+    };
+    if (!raw || typeof raw !== 'object') return out;
+    for (const [k, v] of Object.entries(raw)) {
+        if (Array.isArray(v)) v.forEach(el => put(typeof el === 'string' ? el : el?.element, k));
+        else put(k, v);
+    }
+    return out;
+}
+
+/** Puts two affinity tables together (armour on top of a creature): a resistance cancels a weakness. */
+export function mergeAffinities(a, b) {
+    const out = { ...(a || {}) };
+    for (const [el, lvl] of Object.entries(b || {})) {
+        const cur = out[el];
+        if (!cur) out[el] = lvl;
+        else if (cur === 'weak' && lvl === 'resist') delete out[el];
+        else if (cur === 'resist' && lvl === 'weak') delete out[el];
+        else if (AFFINITIES[lvl].rank > AFFINITIES[cur].rank) out[el] = lvl;
     }
     return out;
 }
@@ -224,7 +290,10 @@ export function isUsableItemProfile(p) {
 /** The attack everybody has. */
 export function basicAttack(c) {
     const stat = attrValue(c, 'dex') > attrValue(c, 'str') ? 'dex' : 'str';
-    return { id: 'basic', label: 'Attack', icon: '⚔️', kind: 'basic', profile: { type: 'damage', power: 'light', stat, target: 'enemy' }, manaCost: 0, cooldown: 0 };
+    const profile = { type: 'damage', power: 'light', stat, target: 'enemy' };
+    if (c.atkElement) profile.element = c.atkElement;
+    if (c.atkPierce) profile.pierce = true;
+    return { id: 'basic', label: 'Attack', icon: '⚔️', kind: 'basic', profile, manaCost: 0, cooldown: 0 };
 }
 
 /**
@@ -255,13 +324,42 @@ export function makeCombatant(spec) {
         guard: false,
         down: hp <= 0,
         stunImmune: 0,
+        affinities: normalizeAffinities(spec.affinities),
+        armored: !!spec.armored,
     };
+    if (ELEMENT_IDS.includes(spec.atkElement)) c.atkElement = spec.atkElement;
+    if (spec.atkPierce) c.atkPierce = true;
     if (spec.tier) c.tier = spec.tier;
     if (spec.description) c.description = String(spec.description);
     if (spec.loot) c.loot = spec.loot;
     const extra = Array.isArray(spec.actions) ? spec.actions : [];
     c.actions = [basicAttack(c), ...extra.filter(a => a && a.id && a.id !== 'basic')];
     return c;
+}
+
+/**
+ * The affinities an enemy may keep. The AI suggests; the category limits how many
+ * (common: weak and resist, up to two of each; rare: immune or absorb, one, elite and boss only).
+ */
+export function capAffinities(spec, tierId) {
+    const caps = AFFINITY_CAPS[tierId] || AFFINITY_CAPS.normal;
+    const given = normalizeAffinities(spec.affinities || {
+        weak: spec.weak, resist: spec.resist, immune: spec.immune, absorb: spec.absorb,
+    });
+    const out = {};
+    let weak = 0, resist = 0, rare = 0;
+    // Rare ones first (they matter most), then weaknesses, then resistances.
+    const order = ['immune', 'absorb', 'weak', 'resist'];
+    for (const lvl of order) {
+        for (const [el, l] of Object.entries(given)) {
+            if (l !== lvl) continue;
+            if (lvl === 'weak') { if (weak >= caps.common) continue; weak++; }
+            else if (lvl === 'resist') { if (resist >= caps.common) continue; resist++; }
+            else { if (rare >= caps.rare) continue; rare++; }
+            out[el] = lvl;
+        }
+    }
+    return out;
 }
 
 /**
@@ -290,6 +388,8 @@ export function buildEnemy(spec, { partyLevel = 1, partySize = 1, id }) {
             stat: a.stat || primary,
             target: a.target,
             status: a.status,
+            element: a.element,
+            pierce: a.pierce === true,
         });
         if (!prof || prof.type === 'gear' || prof.type === 'none') return;
         actions.push({
@@ -300,6 +400,7 @@ export function buildEnemy(spec, { partyLevel = 1, partySize = 1, id }) {
     const c = makeCombatant({
         id, side: 'enemy', name: spec.name, icon: spec.icon || '👹', level, attrs, maxHp,
         tier: tierId, description: spec.description, loot: spec.loot, actions,
+        affinities: capAffinities(spec, tierId), armored: !!spec.armored && AFFINITY_CAPS[tierId].armor,
     });
     return c;
 }
@@ -355,6 +456,16 @@ export function startCombat(state) {
     state.round = 1;
     state.turn = 0;
     push(state, events, { type: 'info', text: `Round 1 — ${state.order.map(id => getCombatant(state, id).name).join(', ')}` });
+    // Armour nobody can break would make the fight unwinnable: it is dropped, and the player is told.
+    const plated = state.combatants.filter(c => c.side === 'enemy' && c.armored);
+    if (plated.length) {
+        if (state.combatants.some(c => c.side === 'party' && !c.down && canBreakArmour(c))) {
+            push(state, events, { type: 'info', text: `${plated.map(c => c.name).join(', ')}: armoured — only Penetration, elements or magic get through. 🛡️` });
+        } else {
+            for (const c of plated) c.armored = false;
+            push(state, events, { type: 'info', text: `Nobody here can pierce armour, so ${plated.map(c => c.name).join(', ')} fight without it.` });
+        }
+    }
     beginTurn(state, events);
     return events;
 }
@@ -508,11 +619,30 @@ export function damageReduction(defender) {
     return { physical: f(null), magic: f({ stat: 'int' }) };
 }
 
-export function damageAgainst(attacker, action, defender, { roll = 1, crit = false, aoe = false } = {}) {
+/**
+ * What a damaging action does to a defender: { amount, kind, element }.
+ * kind: 'normal' | 'weak' | 'resist' | 'immune' | 'absorb' | 'bounce' (armour turned it away).
+ * For 'absorb', `amount` is what the defender is healed by; for 'immune' and 'bounce' it is 0.
+ */
+export function damageOutcome(attacker, action, defender, { roll = 1, crit = false, aoe = false } = {}) {
+    const p = action.profile;
+    const element = p.element || null;
+    if (defender.armored && !element && !p.pierce && PHYSICAL.has(p.stat)) return { amount: 0, kind: 'bounce', element };
     let d = rawDamage(attacker, action, roll, aoe) * (crit ? TUNING.critMult : 1);
-    const def = defenceOf(defender, action.profile);
+    const def = defenceOf(defender, p);
     d = d * (1 - def / (def + TUNING.defK)) * inMult(defender);
-    return Math.max(1, Math.round(d));
+    const aff = element ? defender.affinities?.[element] : null;
+    if (aff === 'immune') return { amount: 0, kind: 'immune', element };
+    if (aff === 'absorb') return { amount: Math.max(1, Math.round(d * TUNING.absorbPct)), kind: 'absorb', element };
+    if (aff === 'weak') d *= TUNING.weakMult;
+    else if (aff === 'resist') d *= TUNING.resistMult;
+    return { amount: Math.max(1, Math.round(d)), kind: aff === 'weak' || aff === 'resist' ? aff : 'normal', element };
+}
+
+/** Damage dealt (0 when the target is immune, absorbs it or its armour turns it away). */
+export function damageAgainst(attacker, action, defender, opts = {}) {
+    const o = damageOutcome(attacker, action, defender, opts);
+    return o.kind === 'absorb' ? 0 : o.amount;
 }
 
 export function healAmount(actor, action, target) {
@@ -528,10 +658,14 @@ export function estimateAction(actor, action, target = null) {
     if (!p) return null;
     if (p.type === 'damage' && target) {
         const aoe = p.target === 'enemies';
+        const lo = damageOutcome(actor, action, target, { roll: TUNING.varMin, aoe });
+        const hi = damageOutcome(actor, action, target, { roll: TUNING.varMax, aoe });
         return {
-            min: damageAgainst(actor, action, target, { roll: TUNING.varMin, aoe }),
-            max: damageAgainst(actor, action, target, { roll: TUNING.varMax, aoe }),
+            min: lo.kind === 'absorb' ? 0 : lo.amount,
+            max: hi.kind === 'absorb' ? 0 : hi.amount,
             hit: Math.round(hitChance(actor, target, p) * 100),
+            kind: lo.kind,
+            heals: lo.kind === 'absorb' ? { min: lo.amount, max: hi.amount } : null,
         };
     }
     if (p.type === 'heal' && target) return { amount: healAmount(actor, action, target) };
@@ -615,8 +749,25 @@ export function performAction(state, actorId, actionId, targetId = null) {
             }
             const crit = nextRandom(state) < TUNING.critChance;
             const roll = TUNING.varMin + nextRandom(state) * (TUNING.varMax - TUNING.varMin);
-            const dmg = damageAgainst(actor, action, t, { roll, crit, aoe });
-            takeDamage(state, events, t, dmg, `${t.name} takes ${dmg} damage${crit ? ' (critical!)' : ''}.`, { actor: actor.id, crit });
+            const o = damageOutcome(actor, action, t, { roll, crit, aoe });
+            const el = o.element ? ` ${ELEMENTS[o.element].icon}` : '';
+            if (o.kind === 'bounce') {
+                push(state, events, { type: 'bounce', actor: actor.id, target: t.id, text: `${t.name}'s armour turns the blow aside — it needs Penetration or an element. 🛡️` });
+                continue;
+            }
+            if (o.kind === 'immune') {
+                push(state, events, { type: 'immune', actor: actor.id, target: t.id, text: `${t.name} is immune to ${ELEMENTS[o.element].name}${el}.` });
+                continue;
+            }
+            if (o.kind === 'absorb') {
+                const gain = Math.min(o.amount, t.maxHp - t.hp);
+                t.hp += gain;
+                push(state, events, { type: 'absorb', actor: actor.id, target: t.id, amount: gain, text: `${t.name} absorbs ${ELEMENTS[o.element].name}${el} and recovers ${gain} HP 💚` });
+                continue;
+            }
+            const dmg = o.amount;
+            const note = o.kind === 'weak' ? ' Weak point!' : o.kind === 'resist' ? ' Resisted.' : '';
+            takeDamage(state, events, t, dmg, `${t.name} takes ${dmg}${el} damage${crit ? ' (critical!)' : ''}.${note}`, { actor: actor.id, crit, affinity: o.kind });
             if (p.status && !t.down && nextRandom(state) < statusChanceOf(p)) applyStatus(state, events, actor, t, p.status, statusTurnsOf(p));
         }
     } else if (p.type === 'heal') {
@@ -777,6 +928,20 @@ export function advance(state) {
 
 // ─── Enemy behaviour ────────────────────────────────────────────────────────
 
+/** Would this attack do nothing at all to the target? */
+function nullifies(attacker, action, defender) {
+    const k = damageOutcome(attacker, action, defender).kind;
+    return k === 'bounce' || k === 'immune' || k === 'absorb';
+}
+
+/** Can this fighter hurt an armoured enemy (Penetration, an element, or a spell)? */
+export function canBreakArmour(c) {
+    return (c.actions || []).some(a => {
+        const p = a.profile;
+        return p && p.type === 'damage' && (p.pierce || p.element || !PHYSICAL.has(p.stat));
+    });
+}
+
 /** What an enemy does this turn: { actionId, targetId } or { defend: true }. */
 export function chooseEnemyAction(state, enemy) {
     const usable = enemy.actions.filter(a => canUse(enemy, a).ok);
@@ -796,6 +961,7 @@ export function chooseEnemyAction(state, enemy) {
         } else if (p.type === 'mana' || p.type === 'cure' || p.type === 'revive' || p.type === 'gear' || p.type === 'none') {
             w = 0;
         }
+        if (p.type === 'damage' && foes.length && foes.every(f => nullifies(enemy, a, f))) w = 0;
         if (w > 0) weights.push({ a, w });
     }
     if (!weights.length) weights.push({ a: enemy.actions[0], w: 1 });
@@ -807,7 +973,8 @@ export function chooseEnemyAction(state, enemy) {
     const p = chosen.profile;
     if (p.target === 'enemy') {
         // Hurt targets attract attacks; the rest are picked at random.
-        const pool = foes.map(c => ({ c, w: 1 + (c.hp / c.maxHp < 0.35 ? 1.5 : 0) }));
+        const open = p.type === 'damage' ? foes.filter(f => !nullifies(enemy, chosen, f)) : foes;
+        const pool = (open.length ? open : foes).map(c => ({ c, w: 1 + (c.hp / c.maxHp < 0.35 ? 1.5 : 0) }));
         total = pool.reduce((s, x) => s + x.w, 0);
         r = nextRandom(state) * total;
         targetId = pool[0]?.c.id ?? null;

@@ -56,7 +56,7 @@ import {
     isChecksEnabled, getCheckAttributes, checkChance, rollCheckFor, getPendingCheck, dismissPendingCheck, pendingActor, getRecentChecks,
 } from '../features/characterChecks.js';
 import { DIFFICULTIES, resolveDifficulty, degreeLabel, rollText, MAX_BONUS } from '../../utils/checkModel.js';
-import { STATUSES as COMBAT_STATUSES, STATUS_IDS as COMBAT_STATUS_IDS, ATTRIBUTE_IDS as COMBAT_ATTRS } from '../../utils/combatModel.js';
+import { STATUSES as COMBAT_STATUSES, STATUS_IDS as COMBAT_STATUS_IDS, ATTRIBUTE_IDS as COMBAT_ATTRS, ELEMENTS as COMBAT_ELEMENTS, ELEMENT_IDS as COMBAT_ELEMENT_IDS, AFFINITIES as COMBAT_AFFINITIES } from '../../utils/combatModel.js';
 import { affinityTier } from '../../utils/affinityModel.js';
 
 const PANEL_ID = 'dooms-stats-panel';
@@ -71,7 +71,7 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
 // editId: the entry being edited (null = adding a new one).
-const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbStatusTurns: '', cbStatusChance: '', cbAuto: null };
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbStatusTurns: '', cbStatusChance: '', cbElement: '', cbPierce: '', aff: {}, cbAuto: null };
 const itemForm = { ...FORM_DEFAULTS };
 // The roll form (🎲 in the header), kept across repaints; `last` is the result just rolled.
 const checkForm = { open: false, stat: '', difficulty: 'medium', bonus: '0', reason: '', last: null };
@@ -95,7 +95,7 @@ function setSection(id) {
     extensionSettings.statsPanelSection = id;
     try { saveSettings(); } catch (e) {}
 }
-function resetForm() { Object.assign(itemForm, FORM_DEFAULTS); }
+function resetForm() { Object.assign(itemForm, FORM_DEFAULTS, { aff: {} }); }
 // The manual XP form (XP tab), kept across repaints.
 const xpForm = { amount: '', reason: '' };
 
@@ -633,7 +633,7 @@ function combatChip(kind, entry, idle = false) {
     const { profile } = getActionProfile(selected.name, selected.isUser, kind, entry);
     if (!profile || (kind === 'item' && profile.type === 'none')) return '';
     const txt = profile.type === 'gear'
-        ? (profile.atk || profile.def ? [profile.atk ? `⚔${profile.atk}` : '', profile.def ? `🛡${profile.def}` : ''].filter(Boolean).join(' ') : '')
+        ? [profile.atk ? `⚔${profile.atk}` : '', profile.def ? `🛡${profile.def}` : '', profile.element ? COMBAT_ELEMENTS[profile.element].icon : '', profile.pierce ? '🗡️' : '', ...Object.keys(profile.affinities || {}).map(el => COMBAT_ELEMENTS[el].icon)].filter(Boolean).join(' ')
         : describeProfile(profile);
     if (!txt) return '';
     return `<span class="dsp-item-eff dsp-item-gear${idle ? ' is-idle' : ''}" title="In a fight: ${escapeHtml(describeProfile(profile))}${idle ? ' (when equipped)' : ''}">${escapeHtml(txt)}</span>`;
@@ -706,15 +706,21 @@ function combatBlockHtml(kind) {
     if (t === 'damage' && f.cbStatus) {
         rows.push(`<label>Chance ${cbSelect('cbStatusChance', [['', 'Standard (60%)'], ...[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => [String(n), `${n}%`])], f.cbStatusChance)}</label>`);
     }
+    if (t === 'damage' || t === 'gear') {
+        rows.push(`<label>Element ${cbSelect('cbElement', [['', t === 'gear' ? 'None' : 'None (physical / plain)'], ...COMBAT_ELEMENT_IDS.map(id => [id, `${COMBAT_ELEMENTS[id].icon} ${COMBAT_ELEMENTS[id].name}`])], f.cbElement)}</label>`);
+        rows.push(`<label>Penetration ${cbSelect('cbPierce', [['', 'No'], ['1', 'Yes — hurts armoured foes']], f.cbPierce)}</label>`);
+    }
     if (t === 'gear') {
         rows.push(`<label>Attack <input type="number" class="dsp-item-in-atk" data-field="atk" data-gear="1" value="${escapeHtml(f.atk)}" placeholder="0" min="0" max="15" step="1"></label>`);
         rows.push(`<label>Defence <input type="number" class="dsp-item-in-def" data-field="def" data-gear="1" value="${escapeHtml(f.def)}" placeholder="0" min="0" max="15" step="1"></label>`);
     }
+    const affRow = t === 'gear' ? `<div class="dsp-aff-row"><span class="dsp-gear-label">Protects against</span>${COMBAT_ELEMENT_IDS.map(id => `<label title="${COMBAT_ELEMENTS[id].name}">${COMBAT_ELEMENTS[id].icon}<select class="dsp-cb" data-aff="${id}">${[['', '—'], ...Object.entries(COMBAT_AFFINITIES).map(([k, v]) => [k, v.name])].map(([v, l]) => `<option value="${v}"${(f.aff[id] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>` : '';
     const hint = !t ? 'Left on Automatic, the AI labels it (or its name decides) the first time a fight starts.'
         : t === 'gear' ? 'Counts while equipped: Attack adds to physical attacks, Defence to armour.'
             : t === 'none' ? 'It stays out of the fight.' : '';
     return `<div class="dsp-item-form-row dsp-gear-row">
         <span class="dsp-gear-label">⚔ In combat</span>${rows.join('')}
+        ${affRow}
         ${hint ? `<span class="dsp-gear-note">${escapeHtml(hint)}</span>` : ''}
     </div>`;
 }
@@ -734,6 +740,9 @@ function applyCombatDefaults() {
     f.cbTarget = auto?.target || (t === 'damage' ? 'enemy' : t === 'status' ? (COMBAT_STATUSES[f.cbStatus]?.bad ? 'enemy' : 'ally') : 'ally');
     f.atk = String(auto?.atk ?? 0);
     f.def = String(auto?.def ?? 0);
+    f.cbElement = auto?.element || '';
+    f.cbPierce = auto?.pierce ? '1' : '';
+    f.aff = { ...(auto?.affinities || {}) };
 }
 
 /** Fills the form's combat fields from what the fight would use for this entry. */
@@ -747,6 +756,7 @@ function loadCombatFields(kind, entry) {
             cbStatus: profile.status || '', atk: String(profile.atk ?? 0), def: String(profile.def ?? 0),
             cbStatusTurns: profile.statusTurns ? String(profile.statusTurns) : '',
             cbStatusChance: profile.statusChance ? String(Math.round(profile.statusChance * 100)) : '',
+            cbElement: profile.element || '', cbPierce: profile.pierce ? '1' : '', aff: { ...(profile.affinities || {}) },
         });
     } else {
         f.cbType = '';
@@ -950,6 +960,7 @@ function submitItemForm() {
             status: f.cbStatus || undefined, atk: num(f.atk), def: num(f.def),
             statusTurns: f.cbStatus && f.cbStatusTurns ? Number(f.cbStatusTurns) : undefined,
             statusChance: f.cbStatus && f.cbType === 'damage' && f.cbStatusChance ? Number(f.cbStatusChance) / 100 : undefined,
+            element: f.cbElement || undefined, pierce: f.cbPierce === '1', affinities: f.cbType === 'gear' ? f.aff : undefined,
         } : null);
     }
     resetForm();
@@ -1324,6 +1335,12 @@ function bindRootListeners(root) {
         if (e.target.classList && e.target.classList.contains('dsp-item-in-type')) { itemForm.type = e.target.value; renderAll(); }
         const chkSel = e.target.getAttribute && e.target.getAttribute('data-chk');
         if (chkSel) { checkForm[chkSel] = e.target.value; renderAll(); return; }
+        const aff = e.target.getAttribute && e.target.getAttribute('data-aff');
+        if (aff) {
+            if (e.target.value) itemForm.aff[aff] = e.target.value; else delete itemForm.aff[aff];
+            itemForm.gearTouched = true;
+            return;
+        }
         const cb = e.target.getAttribute && e.target.getAttribute('data-cb');
         if (cb) {
             itemForm[cb] = e.target.value;

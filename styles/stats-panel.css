@@ -1418,3 +1418,7 @@ input.dsp-xp-big { width: 3em; font-size: 20px; text-align: center; }
 .dsp-check-result.is-compact { padding: 4px 8px; }
 .dsp-check-result.is-compact .dsp-check-die { width: 26px; height: 26px; font-size: 13px; }
 .dsp-check-recent { display: flex; flex-direction: column; gap: 4px; opacity: 0.8; }
+
+.dsp-aff-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; flex: 1 1 100%; }
+.dsp-aff-row label { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+.dsp-aff-row select { max-width: 92px; }

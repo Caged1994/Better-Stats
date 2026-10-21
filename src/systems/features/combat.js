@@ -117,14 +117,20 @@ export function getItemCombat(name, isUser, item) {
         editable: !eff || eff.type === 'gear' || eff.type === 'none',
         atk: gear ? eff.atk : 0,
         def: gear ? eff.def : 0,
+        element: gear ? eff.element || '' : '',
+        pierce: gear ? !!eff.pierce : false,
+        affinities: gear ? { ...(eff.affinities || {}) } : {},
     };
 }
 
 /** Sets an item's weapon and armour values by hand; `null` for both goes back to automatic. */
-export function setItemGear(name, isUser, itemName, atk, def) {
+export function setItemGear(name, isUser, itemName, atk, def, extra = {}) {
     const owner = statKey(name, isUser);
     if (atk === null && def === null) return clearStoredProfile(owner, 'item', itemName);
-    return !!setStoredProfile(owner, 'item', itemName, { type: 'gear', atk: atk || 0, def: def || 0 });
+    return !!setStoredProfile(owner, 'item', itemName, {
+        type: 'gear', atk: atk || 0, def: def || 0,
+        element: extra.element || undefined, pierce: extra.pierce === true, affinities: extra.affinities,
+    });
 }
 
 /**
@@ -152,10 +158,15 @@ export function describeProfile(p) {
     if (!p) return '';
     const type = { damage: 'Damage', heal: 'Heals', status: 'Status', mana: 'Restores Mana', cure: 'Cures', revive: 'Revives', gear: 'Weapon / armour', none: 'Not used in a fight' }[p.type] || p.type;
     const bits = [type];
-    if (p.type === 'gear') return `${type} · ⚔${p.atk || 0} 🛡${p.def || 0}`;
+    if (p.type === 'gear') {
+        const aff = Object.entries(p.affinities || {}).map(([el, l]) => `${M.ELEMENTS[el].icon}${M.AFFINITIES[l].name.toLowerCase()}`);
+        return [`${type} · ⚔${p.atk || 0} 🛡${p.def || 0}`, p.element ? `${M.ELEMENTS[p.element].icon} ${M.ELEMENTS[p.element].name}` : '', p.pierce ? 'Penetration' : '', ...aff].filter(Boolean).join(' · ');
+    }
     if (p.type === 'none') return type;
     if (['damage', 'heal', 'mana', 'revive'].includes(p.type)) bits.push(p.power[0].toUpperCase() + p.power.slice(1));
     if (['damage', 'heal'].includes(p.type) && p.stat && p.stat !== 'none') bits.push(p.stat.toUpperCase());
+    if (p.element) bits.push(`${M.ELEMENTS[p.element].icon} ${M.ELEMENTS[p.element].name}`);
+    if (p.pierce) bits.push('Penetration');
     if (p.status) {
         const detail = [p.type === 'damage' && p.statusChance ? `${Math.round(p.statusChance * 100)}%` : '', p.statusTurns ? `${p.statusTurns} turn${p.statusTurns === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
         bits.push(`${p.type === 'status' ? '' : 'may cause '}${M.STATUSES[p.status]?.name.toLowerCase() || p.status}${detail ? ` (${detail})` : ''}`.trim());
@@ -216,6 +227,9 @@ export function buildPartyMember(name, isUser, id = combatId('p', name)) {
     const actions = [];
     let atkBonus = 0;
     let armor = 0;
+    let atkElement = '';
+    let atkPierce = false;
+    let affinities = {};
 
     if (isAbilitiesEnabled()) {
         for (const a of getAbilities(name, isUser)) {
@@ -231,7 +245,12 @@ export function buildPartyMember(name, isUser, id = combatId('p', name)) {
             const p = r.profile;
             if (!p) continue;
             if (p.type === 'gear') {
-                if (it.equipped) { atkBonus += p.atk || 0; armor += p.def || 0; }
+                if (it.equipped) {
+                    atkBonus += p.atk || 0; armor += p.def || 0;
+                    if (p.element && !atkElement) atkElement = p.element;
+                    if (p.pierce) atkPierce = true;
+                    if (p.affinities) affinities = M.mergeAffinities(affinities, p.affinities);
+                }
             } else if (M.isUsableItemProfile(p)) {
                 actions.push({
                     id: `it:${it.id}`, label: it.name, icon: it.icon || '📦', kind: 'item',
@@ -245,7 +264,7 @@ export function buildPartyMember(name, isUser, id = combatId('p', name)) {
         id, side: 'party', name, isUser, level, attrs,
         healthPct: hasHealth ? cur.health : 100,
         mana: hasMana ? cur.mana : null,
-        armor, atkBonus, actions,
+        armor, atkBonus, actions, atkElement, atkPierce, affinities,
     });
     return { combatant, unlabelled };
 }
@@ -361,9 +380,21 @@ export function normalizeEnemySpecs(raw) {
             tier: M.TIERS.includes(String(e.tier).toLowerCase()) ? String(e.tier).toLowerCase() : 'normal',
             levelDelta: Number(e.levelDelta) || 0,
             focus: String(e.focus || '').toLowerCase(),
-            attacks: attacks.map(a => ({ name: cleanText(a.name, 40), power: a.power, stat: a.stat, status: a.status, type: a.type, target: a.target })),
+            attacks: attacks.map(a => ({ name: cleanText(a.name, 40), power: a.power, stat: a.stat, status: a.status, type: a.type, target: a.target, element: String(a.element || '').toLowerCase(), pierce: a.pierce === true })),
+            affinities: M.normalizeAffinities(e.affinities || { weak: e.weak, resist: e.resist, immune: e.immune, absorb: e.absorb }),
+            armored: e.armored === true || /^(true|yes)$/i.test(String(e.armored)),
             loot,
         });
+    }
+    // Encounter-wide limits: immune/absorb on one creature, armour on at most half the group.
+    let rare = 0, armoured = 0;
+    for (const e of out) {
+        const cap = M.AFFINITY_CAPS[e.tier] || M.AFFINITY_CAPS.normal;
+        const has = Object.values(e.affinities).some(l => l === 'immune' || l === 'absorb');
+        if (has && (!cap.rare || rare >= 1)) e.affinities = Object.fromEntries(Object.entries(e.affinities).filter(([, l]) => l !== 'immune' && l !== 'absorb'));
+        else if (has) rare++;
+        if (e.armored && (!cap.armor || armoured >= Math.ceil(out.length / 2))) e.armored = false;
+        else if (e.armored) armoured++;
     }
     return out;
 }

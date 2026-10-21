@@ -482,5 +482,92 @@ ok(C.guessProfile('ability', 'Power strike', '', {}).type === 'damage', 'guess: 
     C.advance;
 }
 
+// ── elements, affinities, armour ──
+{
+    const fire = act('fire', { type: 'damage', stat: 'int', element: 'fire', target: 'enemy' });
+    const plain = act('slash', { type: 'damage', stat: 'str', target: 'enemy' });
+    const pierce = act('lance', { type: 'damage', stat: 'str', pierce: true, target: 'enemy' });
+    const h = hero('H', {}, [fire, plain, pierce]);
+    eq(fire.profile.element, 'fire', 'profile keeps its element');
+    ok(prof({ type: 'heal', stat: 'wis', element: 'fire' }).element === undefined, 'only damage and gear carry an element');
+    ok(prof({ type: 'damage', element: 'plasma' }).element === undefined, 'unknown element is dropped');
+    const neutral = foe('N'), weak = foe('W', { affinities: { fire: 'weak' } }), res = foe('R', { affinities: { fire: 'resist' } });
+    const imm = foe('I', { affinities: { fire: 'immune' } }), abs = foe('A', { affinities: { fire: 'absorb' } });
+    const dmg = (f) => C.damageOutcome(h, fire, f, { roll: 1 });
+    const base = dmg(neutral).amount;
+    ok(dmg(weak).kind === 'weak' && Math.abs(dmg(weak).amount - base * 1.5) <= 1, 'weak takes x1.5');
+    ok(dmg(res).kind === 'resist' && Math.abs(dmg(res).amount - base * 0.5) <= 1, 'resist takes x0.5');
+    ok(dmg(imm).kind === 'immune' && dmg(imm).amount === 0 && C.damageAgainst(h, fire, imm) === 0, 'immune takes nothing');
+    ok(dmg(abs).kind === 'absorb' && dmg(abs).amount > 0 && C.damageAgainst(h, fire, abs) === 0, 'absorb deals nothing and heals');
+    ok(C.damageOutcome(h, plain, imm).kind === 'normal', 'an element only matters for moves of that element');
+    // armour
+    const tin = foe('T', { armored: true });
+    ok(C.damageOutcome(h, plain, tin).kind === 'bounce' && C.damageAgainst(h, plain, tin) === 0, 'armoured: plain physical bounces');
+    ok(C.damageOutcome(h, pierce, tin).amount > 0, 'armoured: Penetration gets through');
+    ok(C.damageOutcome(h, fire, tin).amount > 0, 'armoured: an element gets through');
+    ok(C.damageOutcome(h, act('zap', { type: 'damage', stat: 'int', target: 'enemy' }), tin).amount > 0, 'armoured: magic gets through');
+    ok(C.canBreakArmour(h) && !C.canBreakArmour(hero('P', {}, [plain])), 'canBreakArmour');
+    // estimate
+    const est = C.estimateAction(h, plain, tin);
+    ok(est.kind === 'bounce' && est.max === 0, 'estimate says it bounces');
+    ok(C.estimateAction(h, fire, abs).heals.max > 0, 'estimate shows the absorbed healing');
+    // performing
+    {
+        const a = foe('Ab', { affinities: { fire: 'absorb' } });
+        a.hp = 5;
+        const s2 = fight([hero('H2', {}, [fire]), a], 3);
+        turnOf(s2, 'H2');
+        const ev = C.performAction(s2, 'H2', 'fire', 'Ab');
+        ok(ev.some(e => e.type === 'absorb') || ev.some(e => e.type === 'miss'), 'absorb event (or a miss)');
+        ok(a.hp >= 5, 'absorbing never hurts');
+    }
+    {
+        const t2 = foe('T2', { armored: true });
+        const s2 = fight([hero('H3', {}, [plain]), hero('H4', {}, [pierce]), t2], 4);
+        turnOf(s2, 'H3');
+        const before = t2.hp;
+        for (let i = 0; i < 6; i++) { turnOf(s2, 'H3'); C.performAction(s2, 'H3', 'basic', 'T2'); }
+        ok(t2.hp === before, 'armour: nothing hurt it');
+    }
+    // gear on the basic attack
+    const sword = hero('S', { atkElement: 'ice', atkPierce: true });
+    ok(sword.actions[0].profile.element === 'ice' && sword.actions[0].profile.pierce === true, 'basic attack takes the weapon element and Penetration');
+    ok(C.canBreakArmour(sword), 'a piercing weapon breaks armour');
+    // armour with nobody to break it
+    {
+        const t3 = foe('T3', { armored: true });
+        const s3 = fight([hero('X', {}, [plain]), t3], 2);
+        ok(!t3.armored && s3.log.some(e => /Nobody here can pierce/.test(e.text)), 'armour nobody can break is dropped, with a message');
+        const t4 = foe('T4', { armored: true });
+        const s4 = fight([hero('Y', {}, [plain, pierce]), t4], 2);
+        ok(t4.armored, 'armour stays when someone can break it');
+    }
+    // merging gear and creature affinities
+    eq(C.mergeAffinities({ fire: 'weak' }, { fire: 'resist' }), {}, 'a resistance cancels a weakness');
+    eq(C.mergeAffinities({ fire: 'resist' }, { fire: 'absorb', ice: 'weak' }), { fire: 'absorb', ice: 'weak' }, 'the stronger affinity wins');
+    eq(C.normalizeAffinities({ weak: ['fire', 'bogus'], resist: ['ice'] }), { fire: 'weak', ice: 'resist' }, 'affinities from lists');
+    eq(prof({ type: 'gear', atk: 3, def: 2, affinities: { fire: 'resist' }, element: 'holy', pierce: true }).affinities, { fire: 'resist' }, 'gear keeps affinities');
+    // caps by category
+    const spec = { weak: ['fire', 'ice', 'earth'], resist: ['water', 'dark', 'holy'], immune: ['lightning'], absorb: ['fire'] };
+    const nCount = (t) => Object.keys(C.capAffinities(spec, t)).length;
+    ok(nCount('normal') === 4 && !Object.values(C.capAffinities(spec, 'normal')).some(l => l === 'immune' || l === 'absorb'), 'normal enemies never get immune or absorb');
+    ok(Object.values(C.capAffinities(spec, 'boss')).filter(l => l === 'immune' || l === 'absorb').length === 1, 'a boss gets at most one rare affinity');
+    ok(nCount('minion') === 2, 'a minion keeps only one of each common kind');
+    ok(C.buildEnemy({ name: 'Golem', tier: 'minion', armored: true }, { id: 'g' }).armored === false, 'minions are never armoured');
+    ok(C.buildEnemy({ name: 'Golem', tier: 'elite', armored: true }, { id: 'g' }).armored === true, 'elites can be armoured');
+    const e1 = C.buildEnemy({ name: 'Imp', tier: 'normal', attacks: [{ name: 'Flame', element: 'fire' }] }, { id: 'i' });
+    ok(e1.actions.find(a => a.id === 'atk0').profile.element === 'fire', 'enemy attack keeps its element');
+    // enemy AI avoids useless attacks
+    {
+        const g = hero('G', {}, []); g.affinities = { fire: 'immune' };
+        const caster = foe('C', {}, []);
+        caster.actions.push(act('flame', { type: 'damage', stat: 'int', element: 'fire', target: 'enemy' }));
+        const s5 = fight([g, caster], 7);
+        let used = 0;
+        for (let i = 0; i < 20; i++) { const ch = C.chooseEnemyAction(s5, caster); if (ch.actionId === 'flame') used++; }
+        ok(used === 0, 'enemies do not cast at someone immune');
+    }
+}
+
 console.log(`combat model: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
