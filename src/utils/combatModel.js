@@ -97,6 +97,8 @@ export const ELEMENTS = {
     ice: { icon: '❄️', name: 'Ice' },
     lightning: { icon: '⚡', name: 'Lightning' },
     earth: { icon: '🪨', name: 'Earth' },
+    wind: { icon: '🌪️', name: 'Wind' },
+    poison: { icon: '🧪', name: 'Poison' },
     dark: { icon: '🌑', name: 'Dark' },
     holy: { icon: '✨', name: 'Holy' },
 };
