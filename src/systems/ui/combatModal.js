@@ -45,7 +45,7 @@ function freshSetup() {
 }
 
 function freshUi() {
-    return { menu: 'main', pending: null, inspect: null, busy: false, report: null, narration: '', narrationState: 'idle', narrationError: '' };
+    return { menu: 'main', pending: null, inspect: null, legend: false, busy: false, report: null, narration: '', narrationState: 'idle', narrationError: '' };
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -167,6 +167,7 @@ function header() {
         <span class="dcb-title"><i class="fa-solid fa-khanda"></i> Combat</span>
         <span class="dcb-sub">${sub}</span>
         <span class="dcb-spacer"></span>
+        ${view === 'fight' ? `<button type="button" class="dcb-icon-btn${ui?.legend ? ' is-on' : ''}" data-action="legend" title="What each status does" aria-label="Statuses"><i class="fa-solid fa-circle-question"></i></button>` : ''}
         ${view === 'fight' ? '<button type="button" class="dcb-icon-btn" data-action="leave" title="Abandon the fight (counts as a retreat)"><i class="fa-solid fa-person-running"></i></button>' : ''}
         <button type="button" class="dcb-icon-btn" data-action="close" title="${view === 'fight' ? 'Close — the fight is kept and can be resumed' : 'Close'}"><i class="fa-solid fa-xmark"></i></button>
     </header>`;
@@ -239,7 +240,8 @@ function statusesHtml(c) {
     if (!c.statuses?.length && !c.guard) return '';
     const chips = (c.statuses || []).map(s => {
         const d = M.STATUSES[s.id];
-        return d ? `<span class="dcb-status${d.bad ? ' is-bad' : ''}" title="${escapeHtml(d.name)} — ${s.turns} turn${s.turns === 1 ? '' : 's'}">${d.icon}<small>${s.turns}</small></span>` : '';
+        const info = M.statusInfo(s.id);
+        return d ? `<span class="dcb-status${d.bad ? ' is-bad' : ''}" title="${escapeHtml(d.name)} — ${s.turns} turn${s.turns === 1 ? '' : 's'} left. ${escapeHtml(info?.text || '')}">${d.icon}<small>${s.turns}</small></span>` : '';
     });
     if (c.guard) chips.push('<span class="dcb-status" title="Guarding">🛡️</span>');
     return `<div class="dcb-statuses">${chips.join('')}</div>`;
@@ -293,7 +295,8 @@ function describeAction(actor, a, check) {
     } else if (p.type === 'mana') parts.push('Restores Mana');
     else if (p.type === 'cure') parts.push('Removes harmful statuses');
     else if (p.type === 'revive') parts.push('Raises a fallen ally');
-    if (p.status && p.type === 'damage') parts.push(`may cause ${M.STATUSES[p.status]?.name.toLowerCase()}`);
+    if (p.status && p.type === 'damage') parts.push(`may cause ${M.STATUSES[p.status]?.name.toLowerCase()} (${Math.round(M.statusChanceOf(p) * 100)}%, ${M.statusTurnsOf(p)} turns)`);
+    else if (p.status && p.type === 'status') parts.push(`${M.STATUSES[p.status]?.name} for ${p.status === 'stun' ? 1 : M.statusTurnsOf(p)} turn${(p.status === 'stun' ? 1 : M.statusTurnsOf(p)) === 1 ? '' : 's'}`);
     if (!check.ok) parts.push(check.reason);
     return parts.join(' · ');
 }
@@ -348,7 +351,8 @@ function actionDetail(c, a, foe) {
     else if (p.type === 'mana') what = 'Restores Mana';
     else if (p.type === 'cure') what = 'Removes harmful statuses';
     else if (p.type === 'revive') what = 'Raises a fallen ally';
-    if (p.status && p.type === 'damage') what += `, may cause ${(M.STATUSES[p.status]?.name || p.status).toLowerCase()} ${M.STATUSES[p.status]?.icon || ''}`;
+    if (p.status && p.type === 'damage') what += `, may cause ${(M.STATUSES[p.status]?.name || p.status).toLowerCase()} ${M.STATUSES[p.status]?.icon || ''} (${Math.round(M.statusChanceOf(p) * 100)}%, ${M.statusTurnsOf(p)} turns)`;
+    else if (p.status && p.type === 'status') what += ` for ${p.status === 'stun' ? 1 : M.statusTurnsOf(p)} turn${(p.status === 'stun' ? 1 : M.statusTurnsOf(p)) === 1 ? '' : 's'}`;
     const extra = [];
     if (TARGET_LABELS[p.target]) extra.push(`targets ${TARGET_LABELS[p.target]}`);
     if (a.manaCost > 0 && c.mana !== null) extra.push(`💧${a.manaCost} Mana`);
@@ -375,17 +379,40 @@ function inspectHtml() {
         c.atkBonus > 0 ? `⚔️ Weapon bonus +${c.atkBonus}` : '',
     ].filter(Boolean).map(t => `<li>${t}</li>`).join('');
     const list = c.actions.map(a => actionDetail(c, a, foe)).join('') || '<li class="dcb-empty">No actions.</li>';
-    const sts = (c.statuses || []).map(s => { const d = M.STATUSES[s.id]; return d ? `<span class="dcb-status${d.bad ? ' is-bad' : ''}">${d.icon} ${escapeHtml(d.name)} <small>${s.turns}</small></span>` : ''; }).join('');
+    const sts = (c.statuses || []).map(s => { const i = M.statusInfo(s.id); return i ? `<li class="${i.bad ? 'is-bad' : ''}"><span class="dcb-status${i.bad ? ' is-bad' : ''}">${i.icon}<small>${s.turns}</small></span><div><b>${escapeHtml(i.name)}</b> <small>${s.turns} turn${s.turns === 1 ? '' : 's'} left</small><br><small>${escapeHtml(i.text)}</small></div></li>` : ''; }).join('');
     return `<section class="dcb-inspect ${c.side === 'enemy' ? 'is-enemy' : 'is-party'}">
         <header>${avatarHtml(c)}<div class="dcb-ins-title"><strong>${escapeHtml(c.name)}</strong><span>${tier}<span class="dcb-lv">Lv ${c.level}</span></span></div>
             <button type="button" class="dcb-icon-btn" data-action="inspect-close" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
         ${c.description ? `<p class="dcb-ins-desc">${escapeHtml(c.description)}</p>` : ''}
         <div class="dcb-ins-attrs">${attrs}</div>
         <ul class="dcb-ins-stats">${stats}</ul>
-        ${sts ? `<div class="dcb-statuses">${sts}</div>` : ''}
+        ${sts ? `<ul class="dcb-ins-sts">${sts}</ul>` : ''}
         <h4>Attacks &amp; abilities</h4>
         <ul class="dcb-ins-actions">${list}</ul>
     </section>`;
+}
+
+function turnBarHtml() {
+    if (fight.phase !== 'active') return '';
+    const turns = M.upcomingTurns(fight, 9);
+    if (!turns.length) return '';
+    const items = turns.map((t, i) => {
+        const divider = t.newRound ? `<li class="dcb-tb-round" title="A new round begins">R${t.round}</li>` : '';
+        const cls = ['dcb-tb', t.side === 'enemy' ? 'is-enemy' : 'is-party'];
+        if (t.current) cls.push('is-current');
+        if (t.stunned) cls.push('is-stunned');
+        const title = `${t.name}${t.current ? ' — acting now' : i === 1 ? ' — next' : ''}${t.stunned ? ' — stunned, loses this turn' : ''}`;
+        return `${divider}<li class="${cls.join(' ')}" title="${escapeHtml(title)}">${avatarHtml(t)}<span class="dcb-tb-name">${escapeHtml(t.name)}</span>${t.stunned ? '<i class="dcb-tb-stun">💫</i>' : ''}</li>`;
+    }).join('');
+    return `<ol class="dcb-turnbar" aria-label="Turn order">${items}</ol>`;
+}
+
+function legendHtml() {
+    if (!ui.legend) return '';
+    const rows = M.STATUS_IDS.map(id => M.statusInfo(id)).map(i => `<li class="${i.bad ? 'is-bad' : ''}"><span class="dcb-status${i.bad ? ' is-bad' : ''}">${i.icon}</span><div><b>${escapeHtml(i.name)}</b><br><small>${escapeHtml(i.text)}</small></div></li>`).join('');
+    return `<section class="dcb-legend"><header><strong>Statuses</strong><button type="button" class="dcb-icon-btn" data-action="legend" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
+        <ul>${rows}</ul>
+        <p class="dcb-muted">Guarding (Defend) halves the damage taken until your next turn. A status lasts that many turns of whoever carries it; applying it again renews it, it does not add up.</p></section>`;
 }
 
 function fightHtml() {
@@ -398,10 +425,12 @@ function fightHtml() {
     else turn = `${escapeHtml(actor?.name || '…')} is acting…`;
     const mine = fight.phase === 'active' && actor?.side === 'party' && !ui.busy;
     return `<div class="dcb-body dcb-fight">
+        ${turnBarHtml()}
         <div class="dcb-field is-enemies">${enemies.map(c => cardHtml(c, actor)).join('')}</div>
         <div class="dcb-turn">${turn}</div>
         <div class="dcb-field is-party">${party.map(c => cardHtml(c, actor)).join('')}</div>
         ${inspectHtml()}
+        ${legendHtml()}
         ${mine ? actionsHtml(actor) : '<div class="dcb-actions is-waiting"><i class="fa-solid fa-hourglass-half"></i></div>'}
         ${logHtml()}
     </div>`;
@@ -519,6 +548,7 @@ async function setupAction(action, el) {
 async function fightAction(action, el) {
     if (action === 'inspect') { ui.inspect = ui.inspect === el.dataset.id ? null : el.dataset.id; render(); return; }
     if (action === 'inspect-close') { ui.inspect = null; render(); return; }
+    if (action === 'legend') { ui.legend = !ui.legend; render(); return; }
     if (ui.busy || fight.phase !== 'active') {
         if (action === 'leave') return leave();
         return;

@@ -348,7 +348,7 @@
 .dcb-inspect {
     display: flex; flex-direction: column; gap: 8px;
     padding: 10px 12px; border: 1px solid var(--dcb-border); border-radius: 12px; background: var(--dcb-card);
-    max-height: 42%; overflow-y: auto;
+    flex: 0 0 auto; max-height: min(320px, 50vh); overflow-y: auto;
 }
 .dcb-inspect.is-enemy { border-left: 3px solid var(--dcb-enemy); }
 .dcb-inspect.is-party { border-left: 3px solid var(--dcb-hp); }
@@ -365,3 +365,30 @@
 .dcb-ins-name { font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .dcb-ins-actions small { color: var(--dcb-muted); font-size: 11px; }
 @media (max-width: 600px) { .dcb-ins-attrs { grid-template-columns: repeat(3, 1fr); } }
+
+/* Turn bar (Final Fantasy X style): who acts next, left to right */
+.dcb-turnbar {
+    list-style: none; margin: 0; padding: 6px 8px; display: flex; align-items: center; gap: 6px;
+    overflow-x: auto; flex: 0 0 auto;
+    background: rgba(0, 0, 0, 0.25); border: 1px solid var(--dcb-border); border-radius: 12px;
+}
+.dcb-tb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 0 0 auto; width: 52px; padding: 4px 2px; border-radius: 10px; border: 2px solid transparent; opacity: 0.85; }
+.dcb-tb .dcb-avatar { width: 30px; height: 30px; font-size: 15px; }
+.dcb-tb.is-enemy { border-color: rgba(229, 72, 77, 0.55); }
+.dcb-tb.is-party { border-color: rgba(76, 195, 138, 0.55); }
+.dcb-tb.is-current { opacity: 1; width: 62px; background: var(--dcb-card-hover); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); }
+.dcb-tb.is-current .dcb-avatar { width: 36px; height: 36px; }
+.dcb-tb-name { font-size: 10px; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dcb-muted); }
+.dcb-tb.is-current .dcb-tb-name { color: var(--dcb-text); }
+.dcb-tb.is-stunned { opacity: 0.55; }
+.dcb-tb-stun { position: absolute; top: -4px; right: -2px; font-style: normal; font-size: 12px; }
+.dcb-tb-round { flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--dcb-muted); padding: 0 4px; border-left: 1px dashed var(--dcb-border); align-self: stretch; display: flex; align-items: center; }
+
+/* Statuses explained */
+.dcb-icon-btn.is-on { background: var(--dcb-card-hover); color: var(--dcb-text); }
+.dcb-ins-sts, .dcb-legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dcb-ins-sts li, .dcb-legend li { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; }
+.dcb-ins-sts small, .dcb-legend small { color: var(--dcb-muted); }
+.dcb-legend { padding: 10px 12px; border: 1px solid var(--dcb-border); border-radius: 12px; background: var(--dcb-card); display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
+.dcb-legend > header { display: flex; align-items: center; justify-content: space-between; }
+.dcb-legend p { margin: 0; }

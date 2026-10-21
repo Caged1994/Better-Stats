@@ -156,7 +156,10 @@ export function describeProfile(p) {
     if (p.type === 'none') return type;
     if (['damage', 'heal', 'mana', 'revive'].includes(p.type)) bits.push(p.power[0].toUpperCase() + p.power.slice(1));
     if (['damage', 'heal'].includes(p.type) && p.stat && p.stat !== 'none') bits.push(p.stat.toUpperCase());
-    if (p.status) bits.push(`${p.type === 'status' ? '' : 'may cause '}${M.STATUSES[p.status]?.name.toLowerCase() || p.status}`.trim());
+    if (p.status) {
+        const detail = [p.type === 'damage' && p.statusChance ? `${Math.round(p.statusChance * 100)}%` : '', p.statusTurns ? `${p.statusTurns} turn${p.statusTurns === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+        bits.push(`${p.type === 'status' ? '' : 'may cause '}${M.STATUSES[p.status]?.name.toLowerCase() || p.status}${detail ? ` (${detail})` : ''}`.trim());
+    }
     return bits.join(' · ');
 }
 

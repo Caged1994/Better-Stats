@@ -408,5 +408,79 @@ ok(C.guessProfile('ability', 'Power strike', '', {}).type === 'damage', 'guess: 
     ok(r.physical > r.magic && r.magic > 0 && r.physical < 1, 'damageReduction: physical > magic, both in (0,1)');
 }
 
+// ── status duration and chance, set by hand ──
+{
+    const p = prof({ type: 'damage', power: 'light', stat: 'str', target: 'enemy', status: 'burn', statusTurns: 5, statusChance: 100 });
+    ok(p.statusTurns === 5 && p.statusChance === 1, 'profile: duration and chance are kept');
+    const q = prof({ type: 'damage', power: 'light', stat: 'str', target: 'enemy', status: 'burn', statusTurns: 99, statusChance: 0.01 });
+    ok(q.statusTurns === C.MAX_STATUS_TURNS && q.statusChance === C.MIN_STATUS_CHANCE, 'profile: duration and chance are limited');
+    const r = prof({ type: 'damage', power: 'light', stat: 'str', target: 'enemy', statusTurns: 4, statusChance: 0.5 });
+    ok(r.statusTurns === undefined && r.statusChance === undefined, 'profile: no status, no duration or chance');
+    const u = prof({ type: 'status', status: 'shield', statusTurns: 2, statusChance: 0.3 });
+    ok(u.statusTurns === 2 && u.statusChance === undefined, 'profile: a pure status has a duration but no chance');
+    ok(C.statusChanceOf({}) === C.TUNING.statusChance && C.statusTurnsOf({}) === C.TUNING.statusTurns, 'defaults when not set');
+
+    // chance 100%: always lands, for the set number of turns
+    let landed = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+        const a = hero('A', {}, [act('x', { type: 'damage', power: 'light', stat: 'str', target: 'enemy', status: 'burn', statusTurns: 5, statusChance: 1 })]);
+        const e = foe('E', { maxHp: 999 });
+        e.hp = e.maxHp = 999;
+        const s = fight([a, e], seed);
+        turnOf(s, 'A');
+        C.performAction(s, 'A', 'x', 'E');
+        const burn = s.combatants.find(c => c.id === 'E').statuses.find(t => t.id === 'burn');
+        if (burn && burn.turns === 5) landed++;
+    }
+    ok(landed >= 15, `a 100% status lands (almost) every time it hits (${landed}/20)`);
+    // a low chance rarely lands
+    let low = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+        const a = hero('A', {}, [act('x', { type: 'damage', power: 'light', stat: 'str', target: 'enemy', status: 'burn', statusChance: 0.1 })]);
+        const e = foe('E');
+        e.hp = e.maxHp = 999;
+        const s = fight([a, e], seed);
+        turnOf(s, 'A');
+        C.performAction(s, 'A', 'x', 'E');
+        if (s.combatants.find(c => c.id === 'E').statuses.some(t => t.id === 'burn')) low++;
+    }
+    ok(low <= 20, `a 10% status rarely lands (${low}/60)`);
+    // a buff for 2 turns
+    const a2 = hero('A', {}, [act('w', { type: 'status', status: 'shield', target: 'self', statusTurns: 2 })]);
+    const s2 = fight([a2, foe('E')], 3);
+    turnOf(s2, 'A');
+    C.performAction(s2, 'A', 'w', null);
+    ok(s2.combatants.find(c => c.id === 'A').statuses.find(t => t.id === 'shield')?.turns === 2, 'a set duration is used by a status move');
+}
+
+// ── what a status does, in words ──
+{
+    const b = C.statusInfo('burn');
+    ok(b && /7%/.test(b.text) && b.bad, 'statusInfo: burning says its 7%');
+    ok(/25%/.test(C.statusInfo('weaken').text) && /30%/.test(C.statusInfo('empower').text) && /40%/.test(C.statusInfo('shield').text), 'statusInfo: the multipliers are stated');
+    ok(C.statusInfo('nope') === null, 'statusInfo: unknown is null');
+    ok(C.STATUS_IDS.every(id => C.statusInfo(id).text.length > 10), 'statusInfo: every status has a text');
+}
+
+// ── the turn bar ──
+{
+    const s = fight([hero('A', { attrs: { dex: 16 } }), hero('B', { attrs: { dex: 12 } }), foe('E', { attrs: { dex: 8 } }), foe('F', { attrs: { dex: 14 } })], 5);
+    const t = C.upcomingTurns(s, 9);
+    ok(t.length === 9 && t[0].current && t[0].id === C.currentActor(s).id, 'turn bar: starts with whoever acts now');
+    eq(t.slice(0, 4).map(x => x.id), s.order.slice(s.turn).concat(s.order.slice(0, s.turn)).slice(0, 4), 'turn bar: follows the order');
+    ok(t.slice(4, 8).map(x => x.id).join() === s.order.join(), 'turn bar: the next round repeats the order');
+    ok(t.some(x => x.newRound) && t.find(x => x.newRound).round === s.round + 1, 'turn bar: marks the new round');
+    const e = s.combatants.find(c => c.id === 'E');
+    e.hp = 0; e.down = true;
+    ok(!C.upcomingTurns(s, 9).some(x => x.id === 'E'), 'turn bar: the fallen are left out');
+    const f = s.combatants.find(c => c.id === 'F');
+    f.statuses.push({ id: 'stun', turns: 1 });
+    const ft = C.upcomingTurns(s, 9).filter(x => x.id === 'F');
+    ok(ft[0].stunned && !ft[1]?.stunned, 'turn bar: a stunned fighter is marked on the first turn only');
+    s.phase = 'ended';
+    ok(C.upcomingTurns(s, 9).length === 0, 'turn bar: nothing once the fight is over');
+    C.advance;
+}
+
 console.log(`combat model: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

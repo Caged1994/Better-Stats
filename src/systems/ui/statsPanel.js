@@ -71,7 +71,7 @@ let pendingRender = false;    // a repaint skipped while a value was being typed
 // The "Add item" / "Add condition" form survives repaints (an AI update can
 // land while typing). kind: 'item' | 'condition'; only one is open at a time.
 // editId: the entry being edited (null = adding a new one).
-const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbAuto: null };
+const FORM_DEFAULTS = { open: false, kind: 'item', editId: null, icon: '', name: '', desc: '', effects: '', qty: '1', equipped: false, aiCanRemove: true, type: 'spell', cost: '', error: '', atk: '', def: '', gearTouched: false, cbType: '', cbPower: '', cbStat: '', cbTarget: '', cbStatus: '', cbStatusTurns: '', cbStatusChance: '', cbAuto: null };
 const itemForm = { ...FORM_DEFAULTS };
 // The roll form (🎲 in the header), kept across repaints; `last` is the result just rolled.
 const checkForm = { open: false, stat: '', difficulty: 'medium', bonus: '0', reason: '', last: null };
@@ -700,6 +700,12 @@ function combatBlockHtml(kind) {
     if (CB_TARGETS[t]) rows.push(`<label>Target ${cbSelect('cbTarget', CB_TARGETS[t], f.cbTarget)}</label>`);
     if (t === 'damage') rows.push(`<label>May cause ${cbSelect('cbStatus', [['', 'Nothing'], ...COMBAT_STATUS_IDS.map(id => [id, `${COMBAT_STATUSES[id].icon} ${COMBAT_STATUSES[id].name}`])], f.cbStatus)}</label>`);
     if (t === 'status') rows.push(`<label>Status ${cbSelect('cbStatus', COMBAT_STATUS_IDS.map(id => [id, `${COMBAT_STATUSES[id].icon} ${COMBAT_STATUSES[id].name}`]), f.cbStatus || 'shield')}</label>`);
+    if ((t === 'damage' || t === 'status') && f.cbStatus) {
+        rows.push(`<label>Lasts ${cbSelect('cbStatusTurns', [['', COMBAT_STATUSES[f.cbStatus]?.id === 'stun' ? '1 turn (always)' : 'Standard (3 turns)'], ...[1, 2, 3, 4, 5].map(n => [String(n), `${n} turn${n === 1 ? '' : 's'}`])], f.cbStatusTurns)}</label>`);
+    }
+    if (t === 'damage' && f.cbStatus) {
+        rows.push(`<label>Chance ${cbSelect('cbStatusChance', [['', 'Standard (60%)'], ...[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => [String(n), `${n}%`])], f.cbStatusChance)}</label>`);
+    }
     if (t === 'gear') {
         rows.push(`<label>Attack <input type="number" class="dsp-item-in-atk" data-field="atk" data-gear="1" value="${escapeHtml(f.atk)}" placeholder="0" min="0" max="15" step="1"></label>`);
         rows.push(`<label>Defence <input type="number" class="dsp-item-in-def" data-field="def" data-gear="1" value="${escapeHtml(f.def)}" placeholder="0" min="0" max="15" step="1"></label>`);
@@ -723,6 +729,8 @@ function applyCombatDefaults() {
     f.cbPower = auto?.power || 'medium';
     f.cbStat = auto && auto.stat !== 'none' ? auto.stat : (t === 'damage' ? (spell ? 'int' : 'str') : t === 'heal' ? (spell ? 'wis' : 'str') : 'none');
     f.cbStatus = auto?.status || (t === 'status' ? 'shield' : '');
+    f.cbStatusTurns = auto?.statusTurns ? String(auto.statusTurns) : '';
+    f.cbStatusChance = auto?.statusChance ? String(Math.round(auto.statusChance * 100)) : '';
     f.cbTarget = auto?.target || (t === 'damage' ? 'enemy' : t === 'status' ? (COMBAT_STATUSES[f.cbStatus]?.bad ? 'enemy' : 'ally') : 'ally');
     f.atk = String(auto?.atk ?? 0);
     f.def = String(auto?.def ?? 0);
@@ -737,6 +745,8 @@ function loadCombatFields(kind, entry) {
         Object.assign(f, {
             cbType: profile.type, cbPower: profile.power, cbStat: profile.stat, cbTarget: profile.target,
             cbStatus: profile.status || '', atk: String(profile.atk ?? 0), def: String(profile.def ?? 0),
+            cbStatusTurns: profile.statusTurns ? String(profile.statusTurns) : '',
+            cbStatusChance: profile.statusChance ? String(Math.round(profile.statusChance * 100)) : '',
         });
     } else {
         f.cbType = '';
@@ -938,6 +948,8 @@ function submitItemForm() {
         setActionProfile(selected.name, selected.isUser, kind, f.name.trim(), f.cbType ? {
             type: f.cbType, power: f.cbPower || 'medium', stat: f.cbStat || 'none', target: f.cbTarget,
             status: f.cbStatus || undefined, atk: num(f.atk), def: num(f.def),
+            statusTurns: f.cbStatus && f.cbStatusTurns ? Number(f.cbStatusTurns) : undefined,
+            statusChance: f.cbStatus && f.cbType === 'damage' && f.cbStatusChance ? Number(f.cbStatusChance) / 100 : undefined,
         } : null);
     }
     resetForm();
@@ -1318,6 +1330,7 @@ function bindRootListeners(root) {
             itemForm.gearTouched = true;
             itemForm.error = '';
             if (cb === 'cbType') applyCombatDefaults();
+            if (cb === 'cbStatus' && !e.target.value) { itemForm.cbStatusTurns = ''; itemForm.cbStatusChance = ''; }
             if (cb === 'cbStatus' && itemForm.cbType === 'status') itemForm.cbTarget = COMBAT_STATUSES[e.target.value]?.bad ? 'enemy' : 'ally';
             renderAll();
         }

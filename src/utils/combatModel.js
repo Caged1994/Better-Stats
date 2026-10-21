@@ -85,6 +85,9 @@ export const STATUSES = {
     regen: { icon: '💚', name: 'Regenerating', bad: false },
 };
 export const STATUS_IDS = Object.keys(STATUSES);
+/** What a hand-set status may last (turns of the one who carries it) and its lowest chance. */
+export const MAX_STATUS_TURNS = 5;
+export const MIN_STATUS_CHANCE = 0.1;
 
 /** How much each enemy category counts towards how dangerous a fight is. */
 export const THREAT = { minion: 1, normal: 2, elite: 4, boss: 8 };
@@ -150,6 +153,13 @@ export function normalizeProfile(raw, attributeIds = ATTRIBUTE_IDS) {
     const status = STATUS_IDS.includes(String(raw.status ?? '').toLowerCase()) ? String(raw.status).toLowerCase() : undefined;
     const out = { type: t, power, stat, target };
     if (status) out.status = status;
+    if (status) {
+        // How long the status lasts, and (for a damaging move) how likely it is to land.
+        const turns = Math.round(Number(raw.statusTurns));
+        if (Number.isFinite(turns) && turns >= 1) out.statusTurns = clamp(turns, 1, MAX_STATUS_TURNS);
+        const chance = Number(raw.statusChance);
+        if (t === 'damage' && Number.isFinite(chance) && chance > 0) out.statusChance = clamp(Math.round((chance > 1 ? chance / 100 : chance) * 20) / 20, MIN_STATUS_CHANCE, 1);
+    }
     if (t === 'status' && !status) return null;
     if (t === 'gear') {
         out.atk = clamp(Math.round(Number(raw.atk) || 0), 0, 15);
@@ -351,6 +361,74 @@ export function startCombat(state) {
 
 // ─── Statuses ───────────────────────────────────────────────────────────────
 
+const pctText = (x) => `${Math.round(x * 100)}%`;
+
+/**
+ * What a status does, in words and with the real numbers (for the combat
+ * window). Returns null for an unknown id.
+ * @returns {{ id: string, name: string, icon: string, bad: boolean, text: string } | null}
+ */
+export function statusInfo(id) {
+    const d = STATUSES[id];
+    if (!d) return null;
+    const t = TUNING;
+    const text = {
+        burn: `Loses ${pctText(t.dotPct.burn)} of its maximum HP at the start of each of its turns.`,
+        poison: `Loses ${pctText(t.dotPct.poison)} of its maximum HP at the start of each of its turns.`,
+        bleed: `Loses ${pctText(t.dotPct.bleed)} of its maximum HP at the start of each of its turns.`,
+        stun: 'Loses its next turn. Lasts one turn, and afterwards it cannot be stunned again for two turns (bosses may resist it).',
+        weaken: `Deals ${pctText(1 - t.weakenMult)} less damage.`,
+        vulnerable: `Takes ${pctText(t.vulnerableMult - 1)} more damage.`,
+        shield: `Takes ${pctText(1 - t.shieldMult)} less damage.`,
+        empower: `Deals ${pctText(t.empowerMult - 1)} more damage.`,
+        regen: `Recovers ${pctText(t.regenPct)} of its maximum HP at the start of each of its turns.`,
+    }[id] || '';
+    return { id, name: d.name, icon: d.icon, bad: !!d.bad, text };
+}
+
+/**
+ * The next turns in order, for the turn bar. The fight keeps one order per
+ * round (set by Dexterity), so this is a plain look ahead: the fallen are
+ * skipped, and whoever is stunned is marked on their first turn, which they
+ * will lose.
+ * @param {object} state
+ * @param {number} [count]
+ * @returns {Array<{ id, name, side, icon, isUser, round, current: boolean, stunned: boolean, newRound: boolean }>}
+ */
+export function upcomingTurns(state, count = 8) {
+    const order = Array.isArray(state?.order) ? state.order : [];
+    if (!order.length || state.phase !== 'active') return [];
+    const byId = new Map(state.combatants.map(c => [c.id, c]));
+    if (!state.combatants.some(c => !c.down)) return [];
+    const out = [];
+    const stunSeen = new Set();
+    let idx = state.turn;
+    let round = state.round;
+    let guard = 0;
+    while (out.length < count && guard++ < order.length * 6) {
+        if (idx >= order.length) { idx = 0; round++; }
+        const c = byId.get(order[idx]);
+        const first = out.length === 0;
+        if (c && !c.down) {
+            const stunned = hasStatus(c, 'stun') && !stunSeen.has(c.id);
+            if (stunned) stunSeen.add(c.id);
+            out.push({ id: c.id, name: c.name, side: c.side, icon: c.icon, isUser: !!c.isUser, round, current: first, stunned, newRound: idx === 0 && !first });
+        }
+        idx++;
+    }
+    return out;
+}
+
+/** The chance an attack's status lands: the profile's own, or the standard one. */
+export function statusChanceOf(p) {
+    return isNum(p?.statusChance) ? p.statusChance : TUNING.statusChance;
+}
+
+/** How many turns the status of a profile lasts: its own, or the standard length. */
+export function statusTurnsOf(p) {
+    return isNum(p?.statusTurns) ? p.statusTurns : TUNING.statusTurns;
+}
+
 function applyStatus(state, events, source, target, id, turns = TUNING.statusTurns) {
     const def = STATUSES[id];
     if (!def || target.down) return false;
@@ -539,7 +617,7 @@ export function performAction(state, actorId, actionId, targetId = null) {
             const roll = TUNING.varMin + nextRandom(state) * (TUNING.varMax - TUNING.varMin);
             const dmg = damageAgainst(actor, action, t, { roll, crit, aoe });
             takeDamage(state, events, t, dmg, `${t.name} takes ${dmg} damage${crit ? ' (critical!)' : ''}.`, { actor: actor.id, crit });
-            if (p.status && !t.down && nextRandom(state) < TUNING.statusChance) applyStatus(state, events, actor, t, p.status);
+            if (p.status && !t.down && nextRandom(state) < statusChanceOf(p)) applyStatus(state, events, actor, t, p.status, statusTurnsOf(p));
         }
     } else if (p.type === 'heal') {
         push(state, events, { type: 'use', actor: actor.id, text: `${verb}${p.target === 'allies' ? '' : ` on ${targets[0].name}`}.` });
@@ -556,7 +634,7 @@ export function performAction(state, actorId, actionId, targetId = null) {
                 push(state, events, { type: 'miss', actor: actor.id, target: t.id, text: `${t.name} resists.` });
                 continue;
             }
-            applyStatus(state, events, actor, t, p.status);
+            applyStatus(state, events, actor, t, p.status, statusTurnsOf(p));
         }
     } else if (p.type === 'mana') {
         push(state, events, { type: 'use', actor: actor.id, text: `${verb} on ${targets[0].name}.` });
