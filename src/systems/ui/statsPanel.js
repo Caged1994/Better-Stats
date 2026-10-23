@@ -14,6 +14,7 @@
 import { extensionSettings } from '../../core/state.js';
 import { saveSettings } from '../../core/persistence.js';
 import { ensureCss } from '../../core/cssLoader.js';
+import { applyUiTheme, uiThemeReady, themeFontUrl, getUiThemeId } from '../../core/uiTheme.js';
 import { extensionFolderPath } from '../../core/config.js';
 import { escapeHtml } from '../../utils/html.js';
 import { ringColor, activeStats, HUMAN_AVERAGE, HUMAN_PEAK } from '../../utils/statsModel.js';
@@ -117,6 +118,7 @@ export async function openStatsPanel(name, isUser = false) {
         return;
     }
     try { await ensureCss('stats-panel'); } catch (e) { /* render unstyled rather than not at all */ }
+    await uiThemeReady();
     const panel = ensureInlinePanel();
     panel.hidden = false;
     renderAll();
@@ -1008,6 +1010,7 @@ function ensureInlinePanel() {
     panel = document.createElement('div');
     panel.id = PANEL_ID;
     panel.className = 'dooms-stats';
+    applyUiTheme(panel);
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Character stats');
     panel.hidden = true;
@@ -1084,6 +1087,11 @@ function stylesheetLinks() {
     const links = [];
     const css = absoluteUrl(`/${extensionFolderPath}/styles/stats-panel.css`);
     links.push(`<link rel="stylesheet" href="${escapeHtml(css)}">`);
+    if (getUiThemeId() !== 'default') {
+        links.push(`<link rel="stylesheet" href="${escapeHtml(absoluteUrl(`/${extensionFolderPath}/styles/themes.css`))}">`);
+        const font = themeFontUrl();
+        if (font) links.push(`<link rel="stylesheet" href="${escapeHtml(font)}">`);
+    }
     // Font Awesome, from whatever SillyTavern loaded.
     document.querySelectorAll('link[rel="stylesheet"]').forEach(l => {
         const href = l.href || '';
@@ -1122,6 +1130,7 @@ ${stylesheetLinks()}
 </html>`);
         doc.close();
         const root = doc.getElementById('dooms-stats-root');
+        applyUiTheme(root);
         bindRootListeners(root);
         // Closing the window just ends the pop-out; reopening from the menu
         // brings the floating panel back.

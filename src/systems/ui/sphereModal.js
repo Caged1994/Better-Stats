@@ -9,6 +9,7 @@
  * in src/systems/features/sphereGrid.js. Reuses the combat window's look.
  */
 import { ensureCss } from '../../core/cssLoader.js';
+import { applyUiTheme, uiThemeReady } from '../../core/uiTheme.js';
 import { escapeHtml } from '../../utils/html.js';
 import { resolvePortrait } from './portraitBar.js';
 import * as S from '../../utils/sphereModel.js';
@@ -32,6 +33,7 @@ export async function openSphereGrid(name = null, isUser = false) {
         return;
     }
     try { await ensureCss('combat'); await ensureCss('sphere'); } catch (e) { /* unstyled rather than not at all */ }
+    await uiThemeReady();
     const chars = getStatCharacters();
     who = name ? { name, isUser: !!isUser } : (chars[0] ? { name: chars[0].name, isUser: chars[0].isUser } : null);
     ui = freshUi();
@@ -49,6 +51,7 @@ function mount() {
     root = document.createElement('div');
     root.id = ROOT_ID;
     root.className = 'dcb dsg';
+    applyUiTheme(root);
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Sphere grid');
     document.body.appendChild(root);

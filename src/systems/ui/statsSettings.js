@@ -42,6 +42,7 @@ import { setConsequencesEnabled } from '../features/characterConsequences.js';
 import { setCombatEnabled, setCombatNarration } from '../features/combat.js';
 import { setDungeonEnabled, setDungeonNarration } from '../features/dungeon.js';
 import { setSphereEnabled } from '../features/sphereGrid.js';
+import { THEMES, THEME_IDS, getUiThemeId, setUiTheme } from '../../core/uiTheme.js';
 import { setChecksEnabled } from '../features/characterChecks.js';
 
 function sixDigit(color) {
@@ -103,6 +104,16 @@ export function renderStatsSettings() {
     }
 }
 
+/** The look of the Stats panel and the combat, dungeon and sphere grid windows. */
+function renderThemeSetting() {
+    const sel = document.getElementById('rpg-ui-theme');
+    if (!sel) return;
+    sel.innerHTML = THEME_IDS.map(id => `<option value="${id}">${escapeHtml(THEMES[id].label)}</option>`).join('');
+    sel.value = getUiThemeId();
+    const hint = document.getElementById('rpg-ui-theme-hint');
+    if (hint) hint.textContent = THEMES[sel.value]?.hint || '';
+}
+
 let bound = false;
 
 /** Renders the rows and wires them up (once). */
@@ -125,6 +136,7 @@ export function initStatsSettings() {
     flag('rpg-dungeon-enabled', 'dungeonEnabled');
     { const el = document.getElementById('rpg-sphere-enabled'); if (el) el.checked = extensionSettings.sphereGridEnabled === true; }
     flag('rpg-dungeon-narration', 'dungeonNarration');
+    renderThemeSetting();
     const memRecent = document.getElementById('rpg-memories-recent');
     if (memRecent) memRecent.value = String(getRecentLimit());
     renderXpSettings();
@@ -156,6 +168,7 @@ export function initStatsSettings() {
         else if (el.id === 'rpg-combat-narration') setCombatNarration(el.checked);
         else if (el.id === 'rpg-dungeon-enabled') setDungeonEnabled(el.checked);
         else if (el.id === 'rpg-sphere-enabled') setSphereEnabled(el.checked);
+        else if (el.id === 'rpg-ui-theme') { setUiTheme(el.value).then(renderThemeSetting); }
         else if (el.id === 'rpg-dungeon-narration') setDungeonNarration(el.checked);
         else if (el.id && el.id.startsWith('rpg-mana-')) { setManaTier(el.id.slice(9), el.value); renderXpSettings(); }
         else if (el.id === 'rpg-currency-name' || el.id === 'rpg-currency-symbol') {

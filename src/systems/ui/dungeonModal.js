@@ -12,6 +12,7 @@
  * is saved in the chat after every step.
  */
 import { ensureCss } from '../../core/cssLoader.js';
+import { applyUiTheme, uiThemeReady } from '../../core/uiTheme.js';
 import { escapeHtml } from '../../utils/html.js';
 import { resolvePortrait } from './portraitBar.js';
 import * as D from '../../utils/dungeonModel.js';
@@ -55,6 +56,7 @@ export async function openDungeon() {
         return;
     }
     try { await ensureCss('combat'); await ensureCss('dungeon'); } catch (e) { /* unstyled rather than not at all */ }
+    await uiThemeReady();
     ui = freshUi();
     const live = G.getLiveDungeon();
     if (live) {
@@ -81,6 +83,7 @@ function mount() {
     root = document.createElement('div');
     root.id = ROOT_ID;
     root.className = 'dcb ddg';
+    applyUiTheme(root);
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Dungeon');
     document.body.appendChild(root);

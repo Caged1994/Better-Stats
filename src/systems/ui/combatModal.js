@@ -11,6 +11,7 @@
  * turn, so closing the window or reloading the page does not lose it.
  */
 import { ensureCss } from '../../core/cssLoader.js';
+import { applyUiTheme, uiThemeReady } from '../../core/uiTheme.js';
 import { escapeHtml } from '../../utils/html.js';
 import { resolvePortrait } from './portraitBar.js';
 import * as M from '../../utils/combatModel.js';
@@ -65,6 +66,7 @@ export async function openCombat() {
         return;
     }
     try { await ensureCss('combat'); } catch (e) { /* render unstyled rather than not at all */ }
+    await uiThemeReady();
     hooks = null;
     ui = freshUi();
     const live = getLiveEncounter();
@@ -96,6 +98,7 @@ export function closeCombat() {
  */
 export async function openEncounter(state, { onDone, narrate } = {}) {
     try { await ensureCss('combat'); } catch (e) { /* unstyled rather than not at all */ }
+    await uiThemeReady();
     ui = freshUi();
     hooks = { onDone, narrate };
     fight = state;
@@ -120,6 +123,7 @@ function mount() {
     root = document.createElement('div');
     root.id = ROOT_ID;
     root.className = 'dcb';
+    applyUiTheme(root);
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Combat');
     document.body.appendChild(root);

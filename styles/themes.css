@@ -1,0 +1,346 @@
+/* ============================================
+   VISUAL THEMES (src/core/theme.js)
+   Three alternative looks for the combat, dungeon and sphere grid windows
+   and the Stats panel. The default look is the original one and loads none
+   of this. A theme is switched on by data-des-theme="…" on the window's
+   root element (.dcb / .dooms-stats):
+     grimoire — dark parchment, gold and ink
+     terminal — tactical HUD: cyan and amber on near-black
+     paper    — light rice paper, ink and vermilion
+   Loaded on demand (cssLoader id 'themes') together with the theme's fonts.
+   ============================================ */
+
+/* ── Shared hooks ──────────────────────────────────────────────────────── */
+
+:is(.dcb, .dooms-stats)[data-des-theme] {
+    font-family: var(--des-body);
+}
+:is(.dcb, .dooms-stats)[data-des-theme] :is(button, input, select, textarea) { font-family: inherit; }
+
+/* ═══════════════════════════ GRIMOIRE ═══════════════════════════════════ */
+
+:is(.dcb, .dooms-stats)[data-des-theme="grimoire"] {
+    --des-display: 'Cinzel', Georgia, serif;
+    --des-body: 'Crimson Pro', Georgia, serif;
+    --des-mono: 'Crimson Pro', Georgia, serif;
+    --des-gold: #d4a85a;
+
+    --dcb-bg: #14100c;
+    --dcb-bg-2: #2a2016;
+    --dcb-card: #1f1812;
+    --dcb-card-hover: #33261a;
+    --dcb-border: #4a3a24;
+    --dcb-text: #efe3cc;
+    --dcb-muted: #b9a98c;
+    --dcb-accent: #d4a85a;
+    --dcb-hp: #5f9a59;
+    --dcb-hp-low: #c4543f;
+    --dcb-mana: #6b6bd0;
+    --dcb-enemy: #c4543f;
+
+    --dsp-bg: #14100c;
+    --dsp-bg-2: #2a2016;
+    --dsp-card: #1f1812;
+    --dsp-card-hover: #33261a;
+    --dsp-border: #4a3a24;
+    --dsp-text: #efe3cc;
+    --dsp-muted: #b9a98c;
+    --dsp-accent: #d4a85a;
+    --dsp-gold: #d4a85a;
+    --dsp-radius: 0px;
+    font-size: 16px;
+}
+
+.dcb[data-des-theme="grimoire"] { background: rgba(8, 6, 4, 0.8); }
+.dcb[data-des-theme="grimoire"] .dcb-window {
+    border: 1px solid #6b5230; border-radius: 0;
+    box-shadow: inset 0 0 0 5px #14100c, inset 0 0 0 6px #8a6a3a, 0 24px 70px rgba(0, 0, 0, 0.7);
+    background: radial-gradient(120% 80% at 50% 0%, #2a2016 0%, #14100c 70%);
+}
+.dooms-stats[data-des-theme="grimoire"] { background: radial-gradient(120% 60% at 50% 0%, #2a2016 0%, #14100c 70%); }
+#dooms-stats-panel.dooms-stats[data-des-theme="grimoire"] {
+    border: 1px solid #6b5230; border-radius: 0;
+    box-shadow: inset 0 0 0 4px #14100c, inset 0 0 0 5px #8a6a3a, 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+.dooms-stats-popout-body:has(.dooms-stats[data-des-theme="grimoire"]) { background: #14100c; }
+
+.dcb[data-des-theme="grimoire"] :is(.dcb-title, .dcb-body h2, .dcb-body h3, .dcb-turn, .dcb-inspect h4, .dcb-ins-name, .dcb-card-name > span),
+.dooms-stats[data-des-theme="grimoire"] :is(.dsp-title, .dsp-hero-name, .dsp-subhead, .dsp-form-title, .dsp-section-title, .dsp-tab-name, .dsp-attr-name, .dsp-item-name, .dsp-ring-name) {
+    font-family: var(--des-display); letter-spacing: 0.08em;
+}
+.dcb[data-des-theme="grimoire"] .dcb-title,
+.dooms-stats[data-des-theme="grimoire"] .dsp-title { color: #d4a85a; letter-spacing: 0.22em; }
+.dcb[data-des-theme="grimoire"] .dcb-head,
+.dooms-stats[data-des-theme="grimoire"] .dsp-head { background: transparent; border-bottom-color: #4a3a24; }
+.dcb[data-des-theme="grimoire"] .dcb-turn { color: #b9a98c; border-top: 0; border-bottom: 0; display: flex; align-items: center; gap: 14px; }
+.dcb[data-des-theme="grimoire"] .dcb-turn::before, .dcb[data-des-theme="grimoire"] .dcb-turn::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #6b5230, transparent); }
+
+/* Cards, buttons, fields: square, engraved */
+.dcb[data-des-theme="grimoire"] :is(.dcb-card, .dcb-btn, .dcb-act, .dcb-pick, .dcb-enemy-row, .dcb-inspect, .dcb-legend, .dcb-log, .dcb-turnbar, .dcb-text, .dcb-input, .dcb-ins-attr, .ddg-member, .ddg-map, .ddg-room-card, .ddg-room, .dsg-scroll, .dsg-notice),
+.dooms-stats[data-des-theme="grimoire"] :is(.dsp-hero, .dsp-attr, .dsp-item, .dsp-ring, .dsp-chip, .dsp-text-btn, .dsp-sec, .dsp-levelup, .dsp-check-form, .dsp-item-form, .dsp-xplog, .dsp-icon-btn) { border-radius: 0; }
+.dcb[data-des-theme="grimoire"] .dcb-card { background: linear-gradient(180deg, #261d14, #1c1510); }
+.dcb[data-des-theme="grimoire"] .dcb-card.is-enemy { border-left: 1px solid var(--dcb-border); border-top: 2px solid #c4543f; }
+.dcb[data-des-theme="grimoire"] .dcb-card.is-party { border-left: 1px solid var(--dcb-border); border-top: 2px solid #5f9a59; }
+.dcb[data-des-theme="grimoire"] .dcb-card.is-active { box-shadow: 0 0 18px rgba(212, 168, 90, 0.28); }
+.dcb[data-des-theme="grimoire"] .dcb-avatar { border: 1px solid #8a6a3a; background: #14100c; color: #d4a85a; font-family: var(--des-display); }
+.dcb[data-des-theme="grimoire"] .dcb-btn,
+.dcb[data-des-theme="grimoire"] .dcb-act { font-family: var(--des-display); letter-spacing: 0.06em; background: linear-gradient(180deg, #33261a, #241b13); border-color: #8a6a3a; min-height: 44px; }
+.dcb[data-des-theme="grimoire"] .dcb-btn.is-primary { background: linear-gradient(180deg, #d4a85a, #a67f3a); color: #14100c; border-color: #d4a85a; }
+.dcb[data-des-theme="grimoire"] .dcb-btn.is-primary:hover:not(:disabled) { background: linear-gradient(180deg, #e2bb74, #b58d45); }
+.dcb[data-des-theme="grimoire"] .dcb-bar { border-radius: 0; border: 1px solid #4a3a24; background: #0e0b08; }
+.dcb[data-des-theme="grimoire"] .dcb-bar > span { background: linear-gradient(180deg, #5f9a59, #3b6a37); }
+.dcb[data-des-theme="grimoire"] .dcb-card.is-enemy .dcb-bar.is-hp > span { background: linear-gradient(180deg, #b9473a, #7d2a22); }
+.dcb[data-des-theme="grimoire"] .dcb-bar.is-mana > span { background: linear-gradient(180deg, #6b6bd0, #40408f); }
+.dcb[data-des-theme="grimoire"] .dcb-tier { border-radius: 0; background: transparent; color: #d4a85a; font-style: italic; letter-spacing: 0.04em; text-transform: none; font-size: 12px; }
+.dcb[data-des-theme="grimoire"] .dcb-tier.is-elite, .dcb[data-des-theme="grimoire"] .dcb-tier.is-boss { background: transparent; color: #f3cf8a; }
+.dcb[data-des-theme="grimoire"] .dcb-chip, .dcb[data-des-theme="grimoire"] .dcb-status, .dcb[data-des-theme="grimoire"] .dcb-aff, .dcb[data-des-theme="grimoire"] .dcb-armor-tag { border-radius: 0; border: 1px solid #5a4a30; background: #17120d; color: #efe3cc; }
+.dcb[data-des-theme="grimoire"] .dcb-aff.is-weak { border-color: #d4a85a; color: #f3cf8a; }
+.dcb[data-des-theme="grimoire"] .dcb-aff.is-resist { border-color: #6d95c9; color: #a9c6ec; }
+.dcb[data-des-theme="grimoire"] .dcb-aff.is-absorb, .dcb[data-des-theme="grimoire"] .dcb-status:not(.is-bad) { border-color: #5fa86b; color: #9fdca9; }
+.dcb[data-des-theme="grimoire"] .dcb-status.is-bad { border-color: #a8483a; color: #f1b6ad; }
+.dcb[data-des-theme="grimoire"] .dcb-armor-tag { border-color: #9aa4ad; color: #cdd5db; text-transform: uppercase; letter-spacing: 0.06em; }
+.dcb[data-des-theme="grimoire"] .dcb-log { background: #0f0c09; font-style: italic; }
+.dcb[data-des-theme="grimoire"] .dcb-turnbar { background: #1b1510; }
+.dcb[data-des-theme="grimoire"] .dcb-tb { border-radius: 50%; width: 54px; height: 54px; justify-content: center; padding: 0; }
+.dcb[data-des-theme="grimoire"] .dcb-tb.is-party { border-color: #5c7f58; }
+.dcb[data-des-theme="grimoire"] .dcb-tb.is-enemy { border-color: #a8483a; }
+.dcb[data-des-theme="grimoire"] .dcb-tb.is-current { width: 62px; height: 62px; box-shadow: 0 0 0 3px #14100c, 0 0 0 4px #d4a85a; }
+.dcb[data-des-theme="grimoire"] .dcb-tb-name { display: none; }
+
+/* Stats panel */
+.dooms-stats[data-des-theme="grimoire"] .dsp-tab, .dooms-stats[data-des-theme="grimoire"] .dsp-sec { font-family: var(--des-display); letter-spacing: 0.05em; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-tab { border-radius: 0; background: #1b1510; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-tab.is-active, .dooms-stats[data-des-theme="grimoire"] .dsp-sec.is-active { background: #2a2016; border-color: #d4a85a; color: #f3cf8a; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-hero { background: linear-gradient(180deg, #261d14, #1c1510); }
+.dooms-stats[data-des-theme="grimoire"] .dsp-hero-avatar { border-radius: 0; box-shadow: 0 0 0 1px #8a6a3a; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-hero-name { font-size: 19px; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-levelup { background: rgba(212, 168, 90, 0.1); border-color: #d4a85a; color: #f3cf8a; font-style: italic; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-attr-bar, .dooms-stats[data-des-theme="grimoire"] .dsp-xpbar { border-radius: 0; background: #0e0b08; border: 1px solid #4a3a24; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-point-btn { border-radius: 0; background: #1b1510; color: #d4a85a; border: 1px solid #d4a85a; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-item.is-equipped { border-color: #8a6a3a; background: #241b13; }
+.dooms-stats[data-des-theme="grimoire"] .dsp-item-eff { color: #f3cf8a; }
+
+/* ═══════════════════════════ TERMINAL ═══════════════════════════════════ */
+
+:is(.dcb, .dooms-stats)[data-des-theme="terminal"] {
+    --des-display: 'Chakra Petch', system-ui, sans-serif;
+    --des-body: 'Chakra Petch', system-ui, sans-serif;
+    --des-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --des-cut: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+
+    --dcb-bg: #070b10;
+    --dcb-bg-2: #0d141c;
+    --dcb-card: #0d1b26;
+    --dcb-card-hover: #10333a;
+    --dcb-border: #1f3446;
+    --dcb-text: #d7e6f0;
+    --dcb-muted: #8fa6b8;
+    --dcb-accent: #38d6e8;
+    --dcb-hp: #3be08a;
+    --dcb-hp-low: #ff6b5d;
+    --dcb-mana: #4c8dff;
+    --dcb-enemy: #ff5d5d;
+
+    --dsp-bg: #070b10;
+    --dsp-bg-2: #0d141c;
+    --dsp-card: #0d1b26;
+    --dsp-card-hover: #10333a;
+    --dsp-border: #1f3446;
+    --dsp-text: #d7e6f0;
+    --dsp-muted: #8fa6b8;
+    --dsp-accent: #38d6e8;
+    --dsp-gold: #ffb347;
+    --dsp-radius: 0px;
+}
+.dcb[data-des-theme="terminal"] { background: rgba(2, 4, 8, 0.82); }
+.dcb[data-des-theme="terminal"] .dcb-window,
+.dooms-stats[data-des-theme="terminal"] {
+    background: #070b10;
+    background-image: linear-gradient(rgba(56, 214, 232, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 214, 232, 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+}
+.dcb[data-des-theme="terminal"] .dcb-window { border: 1px solid #1f3446; border-radius: 0; box-shadow: 0 0 0 1px #070b10, 0 0 30px rgba(56, 214, 232, 0.12), 0 24px 70px rgba(0, 0, 0, 0.7); }
+#dooms-stats-panel.dooms-stats[data-des-theme="terminal"] { border: 1px solid #1f3446; border-radius: 0; box-shadow: 0 0 0 1px #070b10, 0 0 26px rgba(56, 214, 232, 0.12), 0 18px 50px rgba(0, 0, 0, 0.7); }
+.dooms-stats-popout-body:has(.dooms-stats[data-des-theme="terminal"]) { background: #070b10; }
+
+.dcb[data-des-theme="terminal"] :is(.dcb-title, .dcb-sub, .dcb-lv, .dcb-tier, .dcb-chip, .dcb-aff, .dcb-bar > em, .dcb-log, .dcb-turn, .dcb-body h3, .dcb-inspect h4, .dcb-armor-tag, .dcb-status small, .dcb-ins-attr, .dcb-tb-name, .dcb-tb-round),
+.dooms-stats[data-des-theme="terminal"] :is(.dsp-title, .dsp-lv, .dsp-attr-value, .dsp-value, .dsp-xp-nums, .dsp-qty-n, .dsp-item-eff, .dsp-chip, .dsp-sec-count, .dsp-subhead, .dsp-xplog-amt) { font-family: var(--des-mono); }
+.dcb[data-des-theme="terminal"] .dcb-title, .dooms-stats[data-des-theme="terminal"] .dsp-title { color: #38d6e8; letter-spacing: 0.14em; }
+.dcb[data-des-theme="terminal"] .dcb-title::before, .dooms-stats[data-des-theme="terminal"] .dsp-title::before { content: '// '; color: #2c4a60; }
+.dcb[data-des-theme="terminal"] .dcb-head, .dooms-stats[data-des-theme="terminal"] .dsp-head { background: transparent; }
+.dcb[data-des-theme="terminal"] .dcb-turn { color: #ffb347; border-color: #1f3446; letter-spacing: 0.16em; }
+
+.dcb[data-des-theme="terminal"] :is(.dcb-card, .dcb-inspect, .dcb-legend, .dcb-enemy-row, .ddg-room-card, .ddg-member),
+.dooms-stats[data-des-theme="terminal"] :is(.dsp-hero, .dsp-attr, .dsp-ring) { border-radius: 0; clip-path: var(--des-cut); border-left-width: 4px; border-left-color: #38d6e8; }
+.dcb[data-des-theme="terminal"] :is(.dcb-btn, .dcb-act, .dcb-pick, .dcb-log, .dcb-turnbar, .dcb-text, .dcb-input, .dcb-ins-attr, .ddg-map, .ddg-room, .dsg-scroll, .dsg-notice),
+.dooms-stats[data-des-theme="terminal"] :is(.dsp-item, .dsp-chip, .dsp-text-btn, .dsp-sec, .dsp-tab, .dsp-levelup, .dsp-check-form, .dsp-item-form, .dsp-xplog, .dsp-icon-btn, .dsp-point-btn) { border-radius: 0; }
+.dcb[data-des-theme="terminal"] .dcb-card { background: linear-gradient(135deg, #0e1a24, #0a121a); }
+.dcb[data-des-theme="terminal"] .dcb-card.is-enemy { border-left-color: #ff5d5d; }
+.dcb[data-des-theme="terminal"] .dcb-card.is-party { border-left-color: #38d6e8; }
+.dcb[data-des-theme="terminal"] .dcb-card.is-active { background: linear-gradient(135deg, #10333a, #0a1c24); box-shadow: none; border-color: #38d6e8; }
+.dcb[data-des-theme="terminal"] .dcb-avatar { border-radius: 0; border: 1px solid #38d6e8; background: #10333a; color: #38d6e8; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.dcb[data-des-theme="terminal"] :is(.dcb-btn, .dcb-act) { background: #0d1b26; border-color: #2c4a60; border-bottom: 3px solid #38d6e8; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; font-size: 13px; min-height: 44px; }
+.dcb[data-des-theme="terminal"] .dcb-btn.is-primary { background: #145a63; color: #fff; border-color: #38d6e8; }
+.dcb[data-des-theme="terminal"] .dcb-btn.is-primary:hover:not(:disabled) { background: #1a7380; }
+.dcb[data-des-theme="terminal"] .dcb-bar { border-radius: 0; height: 12px; background: #0b141c; border: 1px solid #1f3446; overflow: hidden; }
+.dcb[data-des-theme="terminal"] .dcb-bar.is-mana { height: 10px; }
+.dcb[data-des-theme="terminal"] .dcb-bar::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 9px, #070b10 9px 11px); }
+.dcb[data-des-theme="terminal"] .dcb-bar > em { z-index: 1; font-size: 10px; }
+.dcb[data-des-theme="terminal"] .dcb-tier { border-radius: 0; background: transparent; color: #8fa6b8; letter-spacing: 0.08em; padding: 0; }
+.dcb[data-des-theme="terminal"] .dcb-tier.is-elite { color: #ffb347; background: transparent; }
+.dcb[data-des-theme="terminal"] .dcb-tier.is-boss { color: #ff8a8a; background: transparent; }
+.dcb[data-des-theme="terminal"] :is(.dcb-chip, .dcb-status, .dcb-aff) { border-radius: 0; border: 1px solid #2c4a60; background: #0b141c; color: #cfe3f0; text-transform: uppercase; letter-spacing: 0.03em; }
+.dcb[data-des-theme="terminal"] .dcb-aff.is-weak { border-color: #ffb347; color: #ffcf85; }
+.dcb[data-des-theme="terminal"] .dcb-aff.is-resist { border-color: #4c8dff; color: #9cc0ff; }
+.dcb[data-des-theme="terminal"] .dcb-aff.is-absorb, .dcb[data-des-theme="terminal"] .dcb-status:not(.is-bad) { border-color: #3be08a; color: #8cf0bb; }
+.dcb[data-des-theme="terminal"] .dcb-aff.is-immune { border-color: #8fa6b8; color: #d7e6f0; }
+.dcb[data-des-theme="terminal"] .dcb-status.is-bad { border-color: #ff5d5d; color: #ffb3b3; }
+.dcb[data-des-theme="terminal"] .dcb-armor-tag { border-radius: 0; background: #ffb347; color: #1a1204; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.dcb[data-des-theme="terminal"] .dcb-log { background: #05080c; font-size: 12.5px; }
+.dcb[data-des-theme="terminal"] .dcb-log li::before { content: '> '; color: #2c4a60; }
+.dcb[data-des-theme="terminal"] .dcb-turnbar { background: transparent; border: 0; padding: 0; gap: 4px; }
+.dcb[data-des-theme="terminal"] .dcb-tb { border-radius: 0; border: 0; border-bottom: 3px solid #38d6e8; background: #0f2a2e; width: 76px; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
+.dcb[data-des-theme="terminal"] .dcb-tb.is-enemy { background: #2d1517; border-bottom-color: #ff5d5d; }
+.dcb[data-des-theme="terminal"] .dcb-tb.is-current { width: 96px; background: #145a63; box-shadow: none; }
+.dcb[data-des-theme="terminal"] .dcb-tb.is-current.is-enemy { background: #6b1f22; }
+.dcb[data-des-theme="terminal"] .dcb-tb .dcb-avatar { clip-path: none; border: 0; background: transparent; }
+
+.dooms-stats[data-des-theme="terminal"] .dsp-tab { background: #0b141c; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); border-radius: 0; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.dooms-stats[data-des-theme="terminal"] .dsp-tab.is-active, .dooms-stats[data-des-theme="terminal"] .dsp-sec.is-active { background: #145a63; color: #fff; border-color: #38d6e8; }
+.dooms-stats[data-des-theme="terminal"] .dsp-sec { text-transform: uppercase; letter-spacing: 0.04em; }
+.dooms-stats[data-des-theme="terminal"] .dsp-hero { background: linear-gradient(135deg, #0e1a24, #0a121a); }
+.dooms-stats[data-des-theme="terminal"] .dsp-hero-avatar { border-radius: 0; box-shadow: 0 0 0 1px #38d6e8; }
+.dooms-stats[data-des-theme="terminal"] .dsp-levelup { background: #2a1f08; border-color: #ffb347; color: #ffcf85; font-family: var(--des-mono); text-transform: uppercase; font-size: 12px; }
+.dooms-stats[data-des-theme="terminal"] :is(.dsp-attr-bar, .dsp-xpbar) { border-radius: 0; height: 8px; background: #0b141c; border: 1px solid #1f3446; }
+.dooms-stats[data-des-theme="terminal"] .dsp-point-btn { background: #1a1204; color: #ffb347; border: 1px solid #ffb347; border-radius: 0; }
+.dooms-stats[data-des-theme="terminal"] .dsp-item { border-left: 4px solid #1f3446; }
+.dooms-stats[data-des-theme="terminal"] .dsp-item.is-equipped { border-left-color: #38d6e8; background: #0d1b26; }
+.dooms-stats[data-des-theme="terminal"] .dsp-item-eff { color: #ffcf85; text-transform: uppercase; }
+
+/* ═══════════════════════════ PAPER ══════════════════════════════════════ */
+
+:is(.dcb, .dooms-stats)[data-des-theme="paper"] {
+    --des-display: 'Shippori Mincho', Georgia, serif;
+    --des-body: 'Zen Kaku Gothic New', system-ui, sans-serif;
+    --des-mono: 'Zen Kaku Gothic New', system-ui, sans-serif;
+    --des-ink: #1d1b19;
+    --des-shadow: 4px 4px 0 rgba(29, 27, 25, 0.85);
+
+    --dcb-bg: #efe8d8;
+    --dcb-bg-2: #f8f3e6;
+    --dcb-card: #f8f3e6;
+    --dcb-card-hover: #fffaf0;
+    --dcb-border: #1d1b19;
+    --dcb-text: #1d1b19;
+    --dcb-muted: #5a5348;
+    --dcb-accent: #c8432b;
+    --dcb-hp: #2f7a55;
+    --dcb-hp-low: #c8432b;
+    --dcb-mana: #2b4a6f;
+    --dcb-enemy: #c8432b;
+
+    --dsp-bg: #efe8d8;
+    --dsp-bg-2: #f8f3e6;
+    --dsp-card: #f8f3e6;
+    --dsp-card-hover: #fffaf0;
+    --dsp-border: #1d1b19;
+    --dsp-text: #1d1b19;
+    --dsp-muted: #5a5348;
+    --dsp-accent: #c8432b;
+    --dsp-gold: #f2c14e;
+    --dsp-radius: 0px;
+    color-scheme: light;
+}
+.dcb[data-des-theme="paper"] { background: rgba(60, 50, 35, 0.55); }
+.dcb[data-des-theme="paper"] .dcb-window,
+.dooms-stats[data-des-theme="paper"] { background: #efe8d8 radial-gradient(circle at 20% 5%, rgba(255, 255, 255, 0.55), transparent 45%); }
+.dcb[data-des-theme="paper"] .dcb-window { border: 2px solid #1d1b19; border-radius: 0; box-shadow: 8px 8px 0 rgba(29, 27, 25, 0.8); }
+#dooms-stats-panel.dooms-stats[data-des-theme="paper"] { border: 2px solid #1d1b19; border-radius: 0; box-shadow: 6px 6px 0 rgba(29, 27, 25, 0.8); backdrop-filter: none; }
+.dooms-stats-popout-body:has(.dooms-stats[data-des-theme="paper"]) { background: #efe8d8; }
+
+.dcb[data-des-theme="paper"] :is(.dcb-title, .dcb-body h2, .dcb-ins-name, .dcb-card-name > span, .dcb-turn),
+.dooms-stats[data-des-theme="paper"] :is(.dsp-title, .dsp-hero-name, .dsp-tab-name, .dsp-attr-name, .dsp-item-name, .dsp-form-title, .dsp-section-title) { font-family: var(--des-display); font-weight: 800; }
+.dcb[data-des-theme="paper"] .dcb-title { font-size: 16px; letter-spacing: 0.06em; color: #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-title { font-size: 15px; letter-spacing: 0.06em; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-head, .dooms-stats[data-des-theme="paper"] .dsp-head { background: transparent; border-bottom: 2px solid #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-foot { border-top: 2px solid #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-turn { font-size: 18px; letter-spacing: 0.02em; text-transform: none; color: #1d1b19; border: 0; display: flex; align-items: center; gap: 14px; justify-content: flex-start; }
+.dcb[data-des-theme="paper"] .dcb-turn::after { content: ''; flex: 1; height: 2px; background: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-body h3 { color: #1d1b19; font-family: var(--des-display); font-size: 14px; letter-spacing: 0.04em; }
+
+.dcb[data-des-theme="paper"] :is(.dcb-card, .dcb-inspect, .dcb-legend, .dcb-enemy-row, .dcb-pick, .ddg-room-card, .ddg-member, .ddg-map, .dsg-scroll, .dsg-notice),
+.dooms-stats[data-des-theme="paper"] :is(.dsp-hero, .dsp-attr, .dsp-ring, .dsp-item) { border-radius: 0; border: 2px solid #1d1b19; background: #f8f3e6; }
+.dcb[data-des-theme="paper"] :is(.dcb-card, .dcb-inspect, .dcb-legend, .ddg-room-card),
+.dooms-stats[data-des-theme="paper"] :is(.dsp-hero, .dsp-attr) { box-shadow: var(--des-shadow); }
+.dcb[data-des-theme="paper"] .dcb-card.is-enemy, .dcb[data-des-theme="paper"] .dcb-card.is-party { border-left-width: 2px; }
+.dcb[data-des-theme="paper"] .dcb-card.is-active { background: #fffaf0; border-color: #2b4a6f; box-shadow: 4px 4px 0 #2b4a6f; }
+.dcb[data-des-theme="paper"] .dcb-card.is-targetable { background: #f6dd9b; border-color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-card.is-targetable:hover { background: #f2c14e; }
+.dcb[data-des-theme="paper"] .dcb-avatar { border-radius: 0; border: 2px solid #1d1b19; background: #c8432b; color: #fff6ea; font-family: var(--des-display); transform: rotate(-3deg); }
+.dcb[data-des-theme="paper"] .dcb-avatar.is-emoji { background: #f8f3e6; }
+.dcb[data-des-theme="paper"] :is(.dcb-btn, .dcb-act) { border-radius: 0; background: #1d1b19; color: #f8f3e6; border: 0; box-shadow: 3px 3px 0 #c8432b; font-family: var(--des-display); font-weight: 700; font-size: 15px; min-height: 44px; }
+.dcb[data-des-theme="paper"] :is(.dcb-btn, .dcb-act):hover:not(:disabled) { background: #3a352f; border-color: transparent; }
+.dcb[data-des-theme="paper"] .dcb-btn.is-primary { background: #c8432b; color: #fff6ea; box-shadow: 3px 3px 0 #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-btn.is-primary:hover:not(:disabled) { background: #d4553d; }
+.dcb[data-des-theme="paper"] .dcb-pick { background: #f8f3e6; }
+.dcb[data-des-theme="paper"] .dcb-pick.is-on { background: #bcd1e6; border-color: #2b4a6f; }
+.dcb[data-des-theme="paper"] :is(.dcb-text, .dcb-input, .dcb select) { border-radius: 0; border: 2px solid #1d1b19; background: #fffaf0; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-bar { border-radius: 0; height: 12px; background: #ddd3bd; border: 2px solid #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-bar.is-mana { height: 10px; }
+.dcb[data-des-theme="paper"] .dcb-bar > em { color: #fff; text-shadow: -1px 0 #1d1b19, 1px 0 #1d1b19, 0 -1px #1d1b19, 0 1px #1d1b19; font-size: 10px; }
+.dcb[data-des-theme="paper"] .dcb-tier { border-radius: 0; background: transparent; color: #5a5348; padding: 0; letter-spacing: 0.06em; }
+.dcb[data-des-theme="paper"] .dcb-tier.is-elite { background: transparent; color: #8a5a00; }
+.dcb[data-des-theme="paper"] .dcb-tier.is-boss { background: transparent; color: #a8321b; }
+.dcb[data-des-theme="paper"] :is(.dcb-chip, .dcb-status, .dcb-aff) { border-radius: 0; border: 1.5px solid #1d1b19; background: #efe8d8; color: #1d1b19; font-weight: 500; }
+.dcb[data-des-theme="paper"] .dcb-chip.is-mana { background: #bcd1e6; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-chip.is-wait { background: #f2c14e; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-aff.is-weak { background: #f2c14e; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-aff.is-resist { background: #bcd1e6; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-aff.is-absorb { background: #b8dcc6; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-aff.is-immune { background: #ddd3bd; color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-status { background: #b8dcc6; }
+.dcb[data-des-theme="paper"] .dcb-status.is-bad { background: #f0b9ad; }
+.dcb[data-des-theme="paper"] .dcb-status small { color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-armor-tag { border-radius: 0; background: #c8432b; color: #fff6ea; border: 0; font-family: var(--des-display); font-weight: 700; transform: rotate(2deg); box-shadow: 2px 2px 0 #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-log { background: transparent; border: 0; border-top: 2px solid #1d1b19; border-radius: 0; }
+.dcb[data-des-theme="paper"] .dcb-log li { color: #3a352f; }
+.dcb[data-des-theme="paper"] .dcb-log li.is-use, .dcb[data-des-theme="paper"] .dcb-log li.is-down { color: #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-log li.is-heal, .dcb[data-des-theme="paper"] .dcb-log li.is-mana, .dcb[data-des-theme="paper"] .dcb-log li.is-absorb { color: #1f6a45; }
+.dcb[data-des-theme="paper"] .dcb-log li.is-crit { color: #a8321b; }
+.dcb[data-des-theme="paper"] .dcb-hint, .dcb[data-des-theme="paper"] .dcb-rewards i { color: #a8321b; }
+.dcb[data-des-theme="paper"] .dcb-error { color: #a8321b; }
+.dcb[data-des-theme="paper"] .dcb-turnbar { background: transparent; border: 0; padding: 2px 0; gap: 10px; }
+.dcb[data-des-theme="paper"] .dcb-tb { border-radius: 0; border: 2px solid #2b4a6f; background: #f8f3e6; width: 52px; transform: rotate(-2deg); }
+.dcb[data-des-theme="paper"] .dcb-tb.is-enemy { border-color: #c8432b; transform: rotate(2deg); }
+.dcb[data-des-theme="paper"] .dcb-tb.is-current { width: 64px; background: #2b4a6f; transform: none; box-shadow: 4px 4px 0 #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-tb.is-current .dcb-tb-name { color: #f8f3e6; }
+.dcb[data-des-theme="paper"] .dcb-tb-round { border-left: 2px solid #1d1b19; color: #c8432b; }
+.dcb[data-des-theme="paper"] .dcb-diff.is-easy strong { color: #1f6a45; }
+.dcb[data-des-theme="paper"] .dcb-diff.is-fair strong { color: #8a5a00; }
+.dcb[data-des-theme="paper"] .dcb-diff.is-hard strong, .dcb[data-des-theme="paper"] .dcb-diff.is-deadly strong { color: #a8321b; }
+.dcb[data-des-theme="paper"] .dcb-ins-attr { border-radius: 0; background: #efe8d8; border: 1.5px solid #1d1b19; }
+.dcb[data-des-theme="paper"] .dcb-icon-btn { border-radius: 0; }
+
+.dooms-stats[data-des-theme="paper"] .dsp-tab { border-radius: 0; background: #f8f3e6; border: 2px solid #1d1b19; font-family: var(--des-display); font-weight: 700; }
+.dooms-stats[data-des-theme="paper"] .dsp-tab.is-active { background: #2b4a6f; color: #f8f3e6; border-color: #1d1b19; box-shadow: 3px 3px 0 #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-sec { border-radius: 0; font-family: var(--des-display); font-weight: 700; font-size: 14px; }
+.dooms-stats[data-des-theme="paper"] .dsp-sec.is-active { background: transparent; color: #1d1b19; border-color: transparent; border-bottom: 4px solid #c8432b; }
+.dooms-stats[data-des-theme="paper"] .dsp-hero-avatar { border-radius: 0; box-shadow: 0 0 0 2px #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-levelup { border-radius: 0; background: #f2c14e; border: 2px solid #1d1b19; color: #1d1b19; font-weight: 700; box-shadow: 3px 3px 0 #1d1b19; }
+.dooms-stats[data-des-theme="paper"] :is(.dsp-attr-bar, .dsp-xpbar) { border-radius: 0; background: #ddd3bd; border: 1.5px solid #1d1b19; height: 8px; }
+.dooms-stats[data-des-theme="paper"] .dsp-point-btn { border-radius: 0; background: #f8f3e6; color: #c8432b; border: 2px solid #c8432b; }
+.dooms-stats[data-des-theme="paper"] .dsp-item.is-equipped { box-shadow: 3px 3px 0 #2b4a6f; border-color: #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-item-eff { color: #1f6a45; }
+.dooms-stats[data-des-theme="paper"] .dsp-icon-btn, .dooms-stats[data-des-theme="paper"] .dsp-text-btn { border-radius: 0; color: #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-icon-btn.is-on { color: #1f6a45; }
+.dooms-stats[data-des-theme="paper"] .dsp-chip { border-radius: 0; border: 1.5px solid #1d1b19; background: #efe8d8; }
+
+.dcb[data-des-theme="grimoire"] .dcb-pick.is-on { background: rgba(212, 168, 90, 0.12); }
+.dcb[data-des-theme="terminal"] .dcb-pick.is-on { background: #10333a; }
+
+/* Paper: gold-on-light fixes */
+.dooms-stats[data-des-theme="paper"] .dsp-levelup :is(b, strong, span, i) { color: #1d1b19; }
+.dooms-stats[data-des-theme="paper"] .dsp-sec-count { background: #1d1b19; color: #f8f3e6; border-radius: 0; }
+.dooms-stats[data-des-theme="paper"] .dsp-tab-lv { color: #f8f3e6; background: #c8432b; border-radius: 0; }
+.dooms-stats[data-des-theme="paper"] .dsp-lv { color: #1d1b19; background: #f2c14e; border-color: #1d1b19; border-radius: 0; }
+.dooms-stats[data-des-theme="paper"] .dsp-sec-dot.is-up { background: #c8432b; box-shadow: none; }
